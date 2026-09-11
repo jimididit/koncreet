@@ -100,7 +100,19 @@ chmod +x "$DEST/koncreet"
 
 echo "Installed from $FETCHED"
 "$DEST/koncreet" version
-"$DEST/koncreet" self-install
+# --yes: curl|bash has no TTY, so confirm() would skip replacing an old symlink
+"$DEST/koncreet" --yes self-install
+
+if [[ ! -x /usr/local/bin/koncreet ]]; then
+  mkdir -p /usr/local/bin
+  ln -sfn "$DEST/koncreet" /usr/local/bin/koncreet
+  echo "Linked /usr/local/bin/koncreet -> $DEST/koncreet"
+fi
+
+if ! command -v koncreet >/dev/null 2>&1 && [[ ! -x /usr/local/bin/koncreet ]]; then
+  echo "PATH link missing. Run: sudo $DEST/koncreet --yes self-install" >&2
+  exit 1
+fi
 
 echo
 echo "Ready. Run:  sudo koncreet"
