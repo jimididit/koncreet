@@ -563,9 +563,12 @@ main() {
       ;;
   esac
 
-  # status/help can run without root for partial info, but modules need root
+  # PATH install/uninstall: root only (any OS). Hardening modules need a supported distro.
   case "$cmd" in
-    menu|apply|baseline|firewall|fail2ban|sheriff|updates|ssh|status|self-install|self-uninstall)
+    self-install|self-uninstall)
+      require_root "$@"
+      ;;
+    menu|apply|baseline|firewall|fail2ban|sheriff|updates|ssh|status)
       require_root "$@"
       koncreet_require_supported_os
       ;;
