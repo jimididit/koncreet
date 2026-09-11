@@ -30,12 +30,18 @@ fail2ban_list_services() {
 }
 
 fail2ban_enabled_jails() {
-  if [[ -f "$KONCREET_F2B_DROPIN" ]]; then
-    awk '/^\[/ && $0 !~ /^\[DEFAULT\]/ { gsub(/[\[\]]/,""); print }' "$KONCREET_F2B_DROPIN"
+  # Prefer live jail list from the daemon; fall back to our drop-in.
+  if command -v fail2ban-client &>/dev/null && fail2ban-client ping &>/dev/null; then
+    fail2ban-client status 2>/dev/null \
+      | awk -F: '/Jail list/{print $2}' \
+      | tr ',' '\n' \
+      | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+      | grep -v '^$' \
+      | sort -u
+    return 0
   fi
-  # Also query live jails if client works
-  if command -v fail2ban-client &>/dev/null; then
-    fail2ban-client status 2>/dev/null | awk -F: '/Jail list/{gsub(/,/,""); print $2}' | tr ' ' '\n' | grep -v '^$' || true
+  if [[ -f "$KONCREET_F2B_DROPIN" ]]; then
+    awk '/^\[/ && $0 !~ /^\[DEFAULT\]/ { gsub(/[\[\]]/,""); print }' "$KONCREET_F2B_DROPIN" | sort -u
   fi
 }
 

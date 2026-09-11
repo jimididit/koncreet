@@ -31,22 +31,21 @@ baseline_apply() {
       if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
         useradd -m -s /bin/bash "$new_user"
         local pass passfile
-        pass="$(openssl rand -base64 18)"
+        # Alphanumeric only — avoids /+ in base64 breaking copy-paste / PAM prompts
+        pass="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 24)"
         echo "${new_user}:${pass}" | chpasswd
-        # Force password change on next login
-        chage -d 0 "$new_user" || true
+        passfile="/root/${new_user}.koncreet-password"
+        umask 077
+        printf '%s\n' "$pass" >"$passfile"
+        chmod 600 "$passfile"
         if [[ -t 1 ]]; then
-          echo "!! Generated password for $new_user (must change on first login): $pass"
-          echo "!! Save this now - it will not be shown again."
+          echo "!! Generated sudo password for $new_user: $pass"
+          echo "!! Also saved at $passfile (mode 0600). Change later with: passwd $new_user"
         else
-          passfile="/root/${new_user}.koncreet-password"
-          umask 077
-          printf '%s\n' "$pass" >"$passfile"
-          chmod 600 "$passfile"
           log_info "Password written to $passfile (mode 0600) - not a TTY"
         fi
       else
-        plan "useradd -m -s /bin/bash $new_user && set expired password"
+        plan "useradd -m -s /bin/bash $new_user && set sudo password"
       fi
     fi
     if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
@@ -84,6 +83,16 @@ baseline_apply() {
       chmod 700 "${new_home}/.ssh"
       chmod 600 "$dest_keys"
       chown -R "${new_user}:${new_user}" "${new_home}/.ssh"
+
+      # Never force-expire when keys exist: SSH key login + expired password
+      # makes PAM demand a password change and can lock the new session out.
+      if koncreet_has_working_key_file "$dest_keys"; then
+        chage -d "$(date -I)" "$new_user" 2>/dev/null || chage -d -1 "$new_user" || true
+        log_info "SSH keys present for $new_user — login with your key (password not expired)"
+      else
+        chage -d 0 "$new_user" || true
+        log_warn "No SSH keys for $new_user — password expired; must change on first login"
+      fi
     fi
   else
     log_info "No username given - skipping user creation"

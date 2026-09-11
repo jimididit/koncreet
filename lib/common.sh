@@ -66,7 +66,9 @@ ask() {
 }
 
 confirm() {
-  local prompt="${1:-Proceed?} [y/N] "
+  # Callers pass the question only; we always append [y/N].
+  local prompt="${1:-Proceed?}"
+  prompt="${prompt% }"; prompt="${prompt%\[y/N\]}"; prompt="${prompt%\[Y/n\]}"; prompt="${prompt% }"
   if [[ "$KONCREET_YES" -eq 1 ]]; then
     return 0
   fi
@@ -74,7 +76,7 @@ confirm() {
     return 1
   fi
   local reply
-  read -r -p "$prompt" reply
+  read -r -p "${prompt} [y/N] " reply
   [[ "$reply" =~ ^[Yy] ]]
 }
 

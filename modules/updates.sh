@@ -24,7 +24,7 @@ updates_apply() {
   esac
 
   if [[ "$auto_reboot" == "true" && "$KONCREET_YES" -ne 1 && -t 0 ]]; then
-    if ! confirm "Enable automatic reboot for kernel updates at ${reboot_hour}? [y/N] "; then
+    if ! confirm "Enable automatic reboot for kernel updates at ${reboot_hour}?"; then
       auto_reboot="false"
     fi
   fi

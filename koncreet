@@ -150,7 +150,7 @@ maybe_confirm_plan() {
     log_info "Dry-run mode - no changes will be made."
     return 0
   fi
-  if ! confirm "Apply these changes? [y/N] "; then
+  if ! confirm "Apply these changes?"; then
     log_info "Aborted."
     exit 0
   fi
@@ -252,7 +252,7 @@ EOF
         svcs="$(ask "Extra services besides ssh (comma-separated, blank=none): ")"
         pub=0
         if [[ "$svcs" == *mysql* || "$svcs" == *vsftpd* ]]; then
-          if confirm "Open sensitive ports publicly? [y/N] "; then pub=1; fi
+          if confirm "Open sensitive ports publicly?"; then pub=1; fi
         fi
         mapfile -t _pl < <(firewall_plan_lines "$svcs" "$pub")
         maybe_confirm_plan "${_pl[@]}"
@@ -267,7 +267,7 @@ EOF
         ;;
       4)
         local reb="false"
-        if confirm "Enable automatic reboot for kernel updates? [y/N] "; then reb="true"; fi
+        if confirm "Enable automatic reboot for kernel updates?"; then reb="true"; fi
         local hour
         hour="$(ask "Reboot hour [04:00]: " "04:00")"
         mapfile -t _pl < <(updates_plan_lines "$reb" "$hour")
