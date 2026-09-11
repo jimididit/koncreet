@@ -1,5 +1,9 @@
 # Koncreet
 
+<p align="center">
+  <img src="assets/banner.png" alt="koncreet — first-hour server hardening" width="832" />
+</p>
+
 First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe defaults, optional config for power users.
 
 **Supported OS:** Debian 12/13 and Ubuntu 22.04/24.04 only. Other distros are refused with a clear message.
