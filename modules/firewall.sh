@@ -81,7 +81,7 @@ firewall_apply() {
   local requested="${1:-}"
   local public="${2:-0}"
 
-  # Validate services first — abort on unknown (no silent skip)
+  # Validate services first - abort on unknown (no silent skip)
   local -a wanted=()
   local svc ports
   if [[ -n "$requested" ]]; then

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# koncreet — first-hour Linux server hardening kit
+# koncreet - first-hour Linux server hardening kit
 # Usage: sudo ./koncreet [global-flags] <command> [args]
 set -euo pipefail
 
@@ -49,7 +49,7 @@ usage() {
   print_banner
   echo
   cat <<'EOF'
-koncreet — first-hour hardening for Debian 12/13 and Ubuntu 22.04/24.04
+koncreet - first-hour hardening for Debian 12/13 and Ubuntu 22.04/24.04
 
 Usage:
   sudo ./koncreet [flags]                 Interactive menu
@@ -147,7 +147,7 @@ maybe_confirm_plan() {
   local -a lines=("$@")
   print_change_plan "${lines[@]}"
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-    log_info "Dry-run mode — no changes will be made."
+    log_info "Dry-run mode - no changes will be made."
     return 0
   fi
   if ! confirm "Apply these changes? [y/N] "; then
@@ -211,7 +211,7 @@ cmd_apply_config() {
         if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
           ssh_apply
         else
-          log_info "ssh_harden=false — skipping SSH hardening"
+          log_info "ssh_harden=false - skipping SSH hardening"
         fi
         ;;
     esac
@@ -451,7 +451,7 @@ main() {
       dispatch_module "$cmd" "$@"
       ;;
     *)
-      die "Unknown command: $cmd — try: koncreet help"
+      die "Unknown command: $cmd - try: koncreet help"
       ;;
   esac
 }

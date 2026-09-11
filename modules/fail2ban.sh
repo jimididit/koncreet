@@ -74,7 +74,7 @@ fail2ban_apply() {
       die "Unknown fail2ban service '$svc'. Run: koncreet fail2ban list"
     fi
     if [[ -n "${KONCREET_F2B_HINTS[$svc]:-}" && ! -e "${KONCREET_F2B_HINTS[$svc]}" ]]; then
-      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found — enabling jail '$jail' anyway (systemd/journal)"
+      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found - enabling jail '$jail' anyway (systemd/journal)"
     fi
     all_jails[$jail]=1
   done
@@ -83,7 +83,7 @@ fail2ban_apply() {
     die "No valid jails to enable"
   fi
 
-  # Always ensure sshd if ssh was requested — and fail later if it does not start
+  # Always ensure sshd if ssh was requested - and fail later if it does not start
   local need_sshd=0
   [[ -n "${all_jails[sshd]:-}" ]] && need_sshd=1
 
@@ -122,7 +122,7 @@ fail2ban_apply() {
 
   local conf
   conf="[DEFAULT]
-# Managed by koncreet — re-run koncreet fail2ban apply instead of hand-editing
+# Managed by koncreet - re-run koncreet fail2ban apply instead of hand-editing
 bantime  = ${bantime}
 findtime = ${findtime}
 maxretry = ${maxretry}
@@ -185,7 +185,7 @@ fail2ban_unban() {
 
 fail2ban_whitelist() {
   local ip="${1:?Usage: koncreet fail2ban whitelist <ip>}"
-  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet — run: koncreet fail2ban apply"
+  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet - run: koncreet fail2ban apply"
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
   if grep -qw "$ip" <<<"$ignoreip"; then
@@ -207,7 +207,7 @@ fail2ban_whitelist() {
 
 fail2ban_undo() {
   if [[ ! -f "$KONCREET_F2B_DROPIN" ]]; then
-    log_info "Nothing to undo — $KONCREET_F2B_DROPIN does not exist"
+    log_info "Nothing to undo - $KONCREET_F2B_DROPIN does not exist"
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then

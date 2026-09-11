@@ -127,7 +127,7 @@ assert_eq "$ports" "2222" "fixture Port 2222"
 echo "== firewall sensitive gate =="
 # shellcheck source=/dev/null
 source "$ROOT/modules/firewall.sh"
-# die() exits the shell — run checks in subshells
+# die() exits the shell - run checks in subshells
 KONCREET_DRY_RUN=1
 if ( firewall_apply "ngnix" 0 ) 2>/dev/null; then
   echo "  FAIL: unknown service should abort"

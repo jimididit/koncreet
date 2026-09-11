@@ -25,7 +25,7 @@ First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe de
 
 ```bash
 git clone <this-repo> && cd koncreet
-sudo ./koncreet                  # interactive menu — prints a change plan first
+sudo ./koncreet                  # interactive menu - prints a change plan first
 ```
 
 Power user / automation:
@@ -68,7 +68,7 @@ Keep your current SSH session open after hardening. Test a **new** connection be
 | Cannot SSH after harden | From the open session: `sudo ./koncreet ssh undo` |
 | Locked out by ufw | Console/VNC: `sudo ufw disable` or `sudo ./koncreet firewall undo` |
 | Banned by fail2ban | `sudo ./koncreet fail2ban unban YOUR.IP` or `sudo ./koncreet fail2ban undo` |
-| Need password for new user | If created non-interactively: `/root/USER.koncreet-password` (mode 0600); password is expired — change on first login |
+| Need password for new user | If created non-interactively: `/root/USER.koncreet-password` (mode 0600); password is expired - change on first login |
 
 ## Config reference
 
@@ -106,4 +106,4 @@ shellcheck koncreet lib/*.sh modules/*.sh
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

@@ -37,13 +37,13 @@ baseline_apply() {
         chage -d 0 "$new_user" || true
         if [[ -t 1 ]]; then
           echo "!! Generated password for $new_user (must change on first login): $pass"
-          echo "!! Save this now — it will not be shown again."
+          echo "!! Save this now - it will not be shown again."
         else
           passfile="/root/${new_user}.koncreet-password"
           umask 077
           printf '%s\n' "$pass" >"$passfile"
           chmod 600 "$passfile"
-          log_info "Password written to $passfile (mode 0600) — not a TTY"
+          log_info "Password written to $passfile (mode 0600) - not a TTY"
         fi
       else
         plan "useradd -m -s /bin/bash $new_user && set expired password"
@@ -75,10 +75,10 @@ baseline_apply() {
           cp "$src_keys" "$dest_keys"
           log_info "Copied SSH key(s) from $src_keys"
         else
-          log_info "authorized_keys already has content — leaving in place"
+          log_info "authorized_keys already has content - leaving in place"
         fi
       else
-        log_warn "No existing authorized_keys found to copy — add one before SSH hardening."
+        log_warn "No existing authorized_keys found to copy - add one before SSH hardening."
         [[ -f "$dest_keys" ]] || touch "$dest_keys"
       fi
       chmod 700 "${new_home}/.ssh"
@@ -86,7 +86,7 @@ baseline_apply() {
       chown -R "${new_user}:${new_user}" "${new_home}/.ssh"
     fi
   else
-    log_info "No username given — skipping user creation"
+    log_info "No username given - skipping user creation"
   fi
 
   log_info "sysctl hardening (cloud-safer profile)"
@@ -175,7 +175,7 @@ EOF
     else
       pkg_install chrony || true
       systemctl enable --now chrony 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || \
-        log_warn "Could not start a time sync service — set one up manually"
+        log_warn "Could not start a time sync service - set one up manually"
     fi
   fi
 

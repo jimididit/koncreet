@@ -93,7 +93,7 @@ koncreet_ssh_unit() {
       return 0
     fi
   done
-  # fall back — Debian/Ubuntu typically ship ssh.service
+  # fall back - Debian/Ubuntu typically ship ssh.service
   KONCREET_SSH_UNIT="ssh.service"
   echo "$KONCREET_SSH_UNIT"
 }
@@ -102,7 +102,7 @@ koncreet_ssh_reload() {
   local unit
   unit="$(koncreet_ssh_unit)"
   if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
-    log_info "ssh.socket is present — using reload-or-restart on $unit"
+    log_info "ssh.socket is present - using reload-or-restart on $unit"
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
     plan "systemctl reload-or-restart $unit"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ssh harden: check / apply / undo — non-root key gate required
+# ssh harden: check / apply / undo - non-root key gate required
 # shellcheck shell=bash
 
 KONCREET_SSH_DROPIN="/etc/ssh/sshd_config.d/99-koncreet.conf"
@@ -31,7 +31,7 @@ ssh_apply() {
   fi
 
   write_file "$KONCREET_SSH_DROPIN" <<'EOF'
-# Managed by koncreet — remove this file (or: koncreet ssh undo) to revert.
+# Managed by koncreet - remove this file (or: koncreet ssh undo) to revert.
 PasswordAuthentication no
 PermitRootLogin no
 KbdInteractiveAuthentication no
@@ -48,7 +48,7 @@ EOF
 
   log_info "Validating sshd config"
   if ! sshd -t; then
-    log_error "sshd -t failed — rolling back, nothing applied."
+    log_error "sshd -t failed - rolling back, nothing applied."
     rm -f "$KONCREET_SSH_DROPIN"
     exit 1
   fi
@@ -73,7 +73,7 @@ ssh_undo() {
       log_info "Removed legacy 99-harden.conf"
       return 0
     fi
-    log_info "Nothing to undo — $KONCREET_SSH_DROPIN does not exist."
+    log_info "Nothing to undo - $KONCREET_SSH_DROPIN does not exist."
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then

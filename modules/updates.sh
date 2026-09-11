@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# unattended security updates — Debian vs Ubuntu origins
+# unattended security updates - Debian vs Ubuntu origins
 # shellcheck shell=bash
 
 updates_plan_lines() {
@@ -43,7 +43,7 @@ EOF
 
   # shellcheck disable=SC2086
   write_file /etc/apt/apt.conf.d/52unattended-upgrades-local <<EOF
-// Managed by koncreet — site policy, keep separate from packaged defaults.
+// Managed by koncreet - site policy, keep separate from packaged defaults.
 
 ${origins}
 

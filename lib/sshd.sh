@@ -56,13 +56,13 @@ koncreet_find_nonroot_key_user() {
 koncreet_ssh_harden_gate() {
   local user
   if user="$(koncreet_find_nonroot_key_user)"; then
-    log_info "OK: non-root user '$user' has SSH key(s) — safe to disable root login."
+    log_info "OK: non-root user '$user' has SSH key(s) - safe to disable root login."
     echo "$user"
     return 0
   fi
   log_error "NOT SAFE: no non-root user with a working authorized_keys found."
   log_error "Create a sudo user with an SSH key first (koncreet baseline apply --user NAME),"
-  log_error "or: ssh-copy-id user@host — then re-run."
+  log_error "or: ssh-copy-id user@host - then re-run."
   return 1
 }
 
