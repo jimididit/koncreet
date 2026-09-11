@@ -144,6 +144,38 @@ else
   PASS=$((PASS + 1))
 fi
 
+echo "== UI / NO_COLOR =="
+# shellcheck source=/dev/null
+source "$ROOT/lib/ui.sh"
+NO_COLOR=1
+ui_init
+assert_eq "${KONCREET_UI_COLOR}" "0" "NO_COLOR disables color"
+unset NO_COLOR
+# Force non-TTY path: color stays off when TERM=dumb
+TERM=dumb ui_init
+assert_eq "${KONCREET_UI_COLOR}" "0" "TERM=dumb disables color"
+
+echo "== ui_run_quiet exit codes =="
+KONCREET_ROOT="$ROOT"
+KONCREET_DRY_RUN=0
+KONCREET_VERBOSE=0
+NO_COLOR=1
+ui_init
+# success
+if ui_run_quiet "true" true >/dev/null 2>&1; then
+  echo "  PASS: ui_run_quiet success"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: ui_run_quiet success"
+  FAIL=$((FAIL + 1))
+fi
+# failure preserves non-zero
+set +e
+ui_run_quiet "false" false >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "$rc" "1" "ui_run_quiet preserves failure exit"
+
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

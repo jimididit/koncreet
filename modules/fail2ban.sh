@@ -4,7 +4,6 @@
 
 KONCREET_F2B_DROPIN="/etc/fail2ban/jail.d/99-koncreet.conf"
 
-# service -> jail name (systemd backend; no logfile required for ssh)
 declare -A KONCREET_F2B_JAILS=(
   [ssh]="sshd"
   [nginx]="nginx-http-auth"
@@ -14,7 +13,6 @@ declare -A KONCREET_F2B_JAILS=(
   [mysql]="mysqld-auth"
 )
 
-# Optional presence hints for non-ssh jails (warn if missing, still enable if requested)
 declare -A KONCREET_F2B_HINTS=(
   [nginx]="/var/log/nginx/error.log"
   [apache]="/var/log/apache2/error.log"
@@ -30,7 +28,6 @@ fail2ban_list_services() {
 }
 
 fail2ban_enabled_jails() {
-  # Prefer live jail list from the daemon; fall back to our drop-in.
   if command -v fail2ban-client &>/dev/null && fail2ban-client ping &>/dev/null; then
     fail2ban-client status 2>/dev/null \
       | awk -F: '/Jail list/{print $2}' \
@@ -80,7 +77,7 @@ fail2ban_apply() {
       die "Unknown fail2ban service '$svc'. Run: koncreet fail2ban list"
     fi
     if [[ -n "${KONCREET_F2B_HINTS[$svc]:-}" && ! -e "${KONCREET_F2B_HINTS[$svc]}" ]]; then
-      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found - enabling jail '$jail' anyway (systemd/journal)"
+      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found — enabling jail '$jail' anyway"
     fi
     all_jails[$jail]=1
   done
@@ -89,13 +86,11 @@ fail2ban_apply() {
     die "No valid jails to enable"
   fi
 
-  # Always ensure sshd if ssh was requested - and fail later if it does not start
   local need_sshd=0
   [[ -n "${all_jails[sshd]:-}" ]] && need_sshd=1
 
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
-  # Normalize: always have localhost once
   local my_ip="${SSH_CONNECTION%% *}"
   if [[ -n "$my_ip" ]] && ! grep -qw "$my_ip" <<<"$ignoreip"; then
     local add_wl=0
@@ -109,7 +104,6 @@ fail2ban_apply() {
     [[ "$add_wl" -eq 1 ]] && ignoreip="${ignoreip:+$ignoreip }$my_ip"
   fi
 
-  # Build ignoreip without duplicating localhost
   local ignore_final="127.0.0.1/8 ::1"
   local tok
   for tok in $ignoreip; do
@@ -147,33 +141,36 @@ ignoreip = ${ignore_final}
     return 0
   fi
 
-  systemctl enable --now fail2ban
-  systemctl restart fail2ban
+  ui_run_quiet "enable fail2ban" systemctl enable --now fail2ban
+  ui_run_quiet "restart fail2ban" systemctl restart fail2ban
   sleep 1
 
   if [[ "$need_sshd" -eq 1 ]]; then
     if ! fail2ban-client status sshd &>/dev/null; then
       die "fail2ban sshd jail did not start. Check: journalctl -u fail2ban -e"
     fi
-    log_info "sshd jail is running"
+    log_ok "sshd jail running (banaction=$banaction)"
   fi
-
-  fail2ban_status
-  log_info "fail2ban done."
 }
 
 fail2ban_status() {
-  echo "--- fail2ban ---"
+  ui_header "fail2ban"
   if ! command -v fail2ban-client &>/dev/null; then
-    echo "fail2ban: not installed"
+    ui_kv "fail2ban" "not installed"
     return 0
   fi
-  fail2ban-client status 2>/dev/null || echo "fail2ban-client status failed"
-  local jail
-  while read -r jail; do
-    [[ -n "$jail" ]] || continue
-    fail2ban-client status "$jail" 2>/dev/null || true
-  done < <(fail2ban_enabled_jails | sort -u)
+  local jails banned
+  jails="$(fail2ban_enabled_jails | tr '\n' ',' | sed 's/,$//')"
+  banned="$(fail2ban-client status 2>/dev/null | awk -F: '/Currently banned/{print $2; exit}' | tr -d ' ')"
+  ui_kv "jails" "${jails:-none}"
+  ui_kv "banned" "${banned:-0}"
+  if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then
+    local jail
+    while read -r jail; do
+      [[ -n "$jail" ]] || continue
+      fail2ban-client status "$jail" 2>/dev/null | sed 's/^/  /' || true
+    done < <(fail2ban_enabled_jails)
+  fi
 }
 
 fail2ban_unban() {
@@ -182,20 +179,20 @@ fail2ban_unban() {
   while read -r jail; do
     [[ -z "$jail" ]] && continue
     if fail2ban-client set "$jail" unbanip "$ip" &>/dev/null; then
-      log_info "Unbanned $ip from $jail"
+      log_ok "unbanned $ip from $jail"
       found=1
     fi
-  done < <(fail2ban_enabled_jails | sort -u)
-  [[ "$found" -eq 1 ]] || log_info "$ip was not banned in any active jail."
+  done < <(fail2ban_enabled_jails)
+  [[ "$found" -eq 1 ]] || ui_skip "$ip was not banned"
 }
 
 fail2ban_whitelist() {
   local ip="${1:?Usage: koncreet fail2ban whitelist <ip>}"
-  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet - run: koncreet fail2ban apply"
+  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet — run: koncreet fail2ban apply"
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
   if grep -qw "$ip" <<<"$ignoreip"; then
-    log_info "$ip is already whitelisted."
+    ui_skip "$ip already whitelisted"
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
@@ -207,13 +204,13 @@ fail2ban_whitelist() {
   else
     sed -i "/^\[DEFAULT\]/a ignoreip = 127.0.0.1/8 ::1 ${ip}" "$KONCREET_F2B_DROPIN"
   fi
-  systemctl restart fail2ban
-  log_info "Whitelisted $ip."
+  ui_run_quiet "reload fail2ban" systemctl restart fail2ban
+  log_ok "whitelisted $ip"
 }
 
 fail2ban_undo() {
   if [[ ! -f "$KONCREET_F2B_DROPIN" ]]; then
-    log_info "Nothing to undo - $KONCREET_F2B_DROPIN does not exist"
+    ui_skip "no fail2ban drop-in to remove"
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
@@ -223,5 +220,5 @@ fail2ban_undo() {
   backup_file "$KONCREET_F2B_DROPIN"
   rm -f "$KONCREET_F2B_DROPIN"
   systemctl restart fail2ban 2>/dev/null || true
-  log_info "Removed koncreet fail2ban drop-in."
+  log_ok "removed koncreet fail2ban drop-in"
 }

@@ -8,6 +8,9 @@ export KONCREET_ROOT
 
 # shellcheck source=lib/common.sh
 source "$KONCREET_ROOT/lib/common.sh"
+# shellcheck source=lib/ui.sh
+source "$KONCREET_ROOT/lib/ui.sh"
+ui_init
 # shellcheck source=lib/os.sh
 source "$KONCREET_ROOT/lib/os.sh"
 # shellcheck source=lib/sshd.sh
@@ -34,19 +37,8 @@ KONCREET_TIMEZONE="${KONCREET_TIMEZONE:-}"
 export KONCREET_DRY_RUN KONCREET_YES KONCREET_VERBOSE KONCREET_CONFIG
 export KONCREET_FIREWALL_PUBLIC KONCREET_TIMEZONE
 
-print_banner() {
-  cat <<'EOF'
- _                                  _
-| | _____  _ __   ___ _ __ ___  ___| |_
-| |/ / _ \| '_ \ / __| '__/ _ \/ _ \ __|
-|   < (_) | | | | (__| | |  __/  __/ |_
-|_|\_\___/|_| |_|\___|_|  \___|\___|\__|
- first-hour server hardening
-EOF
-}
-
 usage() {
-  print_banner
+  ui_banner
   echo
   cat <<'EOF'
 koncreet - first-hour hardening for Debian 12/13 and Ubuntu 22.04/24.04
@@ -131,18 +123,14 @@ bool_public() {
 }
 
 cmd_status() {
-  echo "=== koncreet status ==="
-  echo "OS: ${KONCREET_OS_ID} ${KONCREET_OS_VERSION}"
-  echo "dry-run=${KONCREET_DRY_RUN} yes=${KONCREET_YES}"
-  echo
+  ui_header "koncreet status"
+  ui_kv "OS" "${KONCREET_OS_ID} ${KONCREET_OS_VERSION}"
+  ui_kv "dry-run" "${KONCREET_DRY_RUN}"
+  ui_kv "yes" "${KONCREET_YES}"
   baseline_status
-  echo
   firewall_status
-  echo
   fail2ban_status
-  echo
   updates_status
-  echo
   ssh_status
 }
 
@@ -150,11 +138,11 @@ maybe_confirm_plan() {
   local -a lines=("$@")
   print_change_plan "${lines[@]}"
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-    log_info "Dry-run mode - no changes will be made."
+    ui_muted "Dry-run — no changes will be made."
     return 0
   fi
   if ! confirm "Apply these changes?"; then
-    log_info "Aborted."
+    ui_muted "Aborted."
     exit 0
   fi
 }
@@ -203,23 +191,51 @@ cmd_apply_config() {
 
   maybe_confirm_plan "${plan[@]}"
 
+  # Count modules that will actually run (ssh may be skipped)
+  local -a run_mods=()
   for m in "${mods[@]}"; do
     m="${m// /}"
     case "$m" in
-      baseline) baseline_apply "${KONCREET_CFG_USER}" ;;
-      firewall) firewall_apply "${KONCREET_CFG_FIREWALL_SERVICES}" "$public" ;;
-      fail2ban|sheriff) fail2ban_apply "${KONCREET_CFG_FAIL2BAN_SERVICES}" ;;
-      updates) updates_apply "${KONCREET_CFG_AUTO_REBOOT}" "${KONCREET_CFG_REBOOT_HOUR}" ;;
+      baseline|firewall|fail2ban|sheriff|updates) run_mods+=("$m") ;;
       ssh)
         if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          ssh_apply
-        else
-          log_info "ssh_harden=false - skipping SSH hardening"
+          run_mods+=("ssh")
         fi
         ;;
     esac
   done
-  log_info "apply complete."
+  ui_overall_init "${#run_mods[@]}"
+
+  for m in "${mods[@]}"; do
+    m="${m// /}"
+    case "$m" in
+      baseline)
+        ui_overall_next "Baseline"
+        baseline_apply "${KONCREET_CFG_USER}"
+        ;;
+      firewall)
+        ui_overall_next "Firewall"
+        firewall_apply "${KONCREET_CFG_FIREWALL_SERVICES}" "$public"
+        ;;
+      fail2ban|sheriff)
+        ui_overall_next "fail2ban"
+        fail2ban_apply "${KONCREET_CFG_FAIL2BAN_SERVICES}"
+        ;;
+      updates)
+        ui_overall_next "Updates"
+        updates_apply "${KONCREET_CFG_AUTO_REBOOT}" "${KONCREET_CFG_REBOOT_HOUR}"
+        ;;
+      ssh)
+        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
+          ui_overall_next "SSH hardening"
+          ssh_apply
+        else
+          ui_skip "ssh_harden=false"
+        fi
+        ;;
+    esac
+  done
+  ui_done_summary
   maybe_offer_path_install
 }
 
@@ -304,7 +320,7 @@ maybe_offer_path_install() {
 
 cmd_menu() {
   echo
-  print_banner
+  ui_banner
   while true; do
     cat <<EOF
 
@@ -330,6 +346,7 @@ EOF
         mapfile -t _pl < <(baseline_plan_lines "$user")
         maybe_confirm_plan "${_pl[@]}"
         baseline_apply "$user"
+        ui_done_summary
         ;;
       2)
         local svcs pub
@@ -341,6 +358,7 @@ EOF
         mapfile -t _pl < <(firewall_plan_lines "$svcs" "$pub")
         maybe_confirm_plan "${_pl[@]}"
         firewall_apply "$svcs" "$pub"
+        ui_done_summary
         ;;
       3)
         local fsvcs
@@ -348,6 +366,7 @@ EOF
         mapfile -t _pl < <(fail2ban_plan_lines "$fsvcs")
         maybe_confirm_plan "${_pl[@]}"
         fail2ban_apply "$fsvcs"
+        ui_done_summary
         ;;
       4)
         local reb="false"
@@ -357,12 +376,14 @@ EOF
         mapfile -t _pl < <(updates_plan_lines "$reb" "$hour")
         maybe_confirm_plan "${_pl[@]}"
         updates_apply "$reb" "$hour"
+        ui_done_summary
         ;;
       5)
         if ssh_check; then
           mapfile -t _pl < <(ssh_plan_lines)
           maybe_confirm_plan "${_pl[@]}"
           ssh_apply
+          ui_done_summary
         fi
         ;;
       6)
@@ -379,11 +400,18 @@ EOF
         mapfile -t _pl < <(updates_plan_lines "false" "04:00"); all_plan+=("${_pl[@]}")
         mapfile -t _pl < <(ssh_plan_lines); all_plan+=("${_pl[@]}")
         maybe_confirm_plan "${all_plan[@]}"
+        ui_overall_init 5
+        ui_overall_next "Baseline"
         baseline_apply "$user"
+        ui_overall_next "Firewall"
         firewall_apply "$svcs" 0
+        ui_overall_next "fail2ban"
         fail2ban_apply "$fsvcs"
+        ui_overall_next "Updates"
         updates_apply "false" "04:00"
-        if ssh_check; then ssh_apply; fi
+        ui_overall_next "SSH hardening"
+        if ssh_check; then ssh_apply; else ui_skip "SSH harden (no key user yet)"; fi
+        ui_done_summary
         maybe_offer_path_install
         ;;
       7) cmd_status ;;

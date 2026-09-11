@@ -19,26 +19,43 @@ koncreet_log_path() {
 
 _log_ts() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 
-koncreet_log() {
+# Append to log file only (no stdout).
+_log_file() {
   local level="$1"; shift
-  local msg="$*"
-  local line
-  line="$(_log_ts) [$level] $msg"
-  if [[ "$KONCREET_VERBOSE" -eq 1 ]] || [[ "$level" != "DEBUG" ]]; then
-    echo "$line" >&2
-  fi
-  local lp
+  local line lp
+  line="$(_log_ts) [$level] $*"
   lp="$(koncreet_log_path)"
-  # best-effort append; never fail the kit because logging failed
   { mkdir -p "$(dirname "$lp")" 2>/dev/null || true
     echo "$line" >>"$lp" 2>/dev/null || true
   }
 }
 
-log_info()  { koncreet_log INFO "$*"; }
-log_warn()  { koncreet_log WARN "$*"; }
-log_error() { koncreet_log ERROR "$*"; }
-log_debug() { [[ "$KONCREET_VERBOSE" -eq 1 ]] && koncreet_log DEBUG "$*" || true; }
+koncreet_log() {
+  local level="$1"; shift
+  local msg="$*"
+  _log_file "$level" "$msg"
+  case "$level" in
+    ERROR) ui_error "$msg" 2>/dev/null || echo "[ERROR] $msg" >&2 ;;
+    WARN)  ui_warn "$msg" 2>/dev/null || echo "[WARN] $msg" >&2 ;;
+    DEBUG)
+      [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$msg" 2>/dev/null || echo "[DEBUG] $msg" >&2; }
+      ;;
+    INFO|*)
+      # Prefer quiet structured UI from callers; INFO still shows as muted · line
+      ui_info "$msg" 2>/dev/null || echo "[INFO] $msg" >&2
+      ;;
+  esac
+}
+
+log_info()  { _log_file INFO "$*"; ui_info "$*" 2>/dev/null || echo "$*" >&2; }
+log_warn()  { _log_file WARN "$*"; ui_warn "$*" 2>/dev/null || echo "[WARN] $*" >&2; }
+log_error() { _log_file ERROR "$*"; ui_error "$*" 2>/dev/null || echo "[ERROR] $*" >&2; }
+log_debug() {
+  _log_file DEBUG "$*"
+  [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$*" 2>/dev/null || true; }
+}
+# Success line that also hits the log
+log_ok() { _log_file INFO "$*"; ui_success "$*" 2>/dev/null || echo "[OK] $*" >&2; }
 
 die() {
   log_error "$*"
@@ -61,12 +78,15 @@ ask() {
     echo "$default"
     return 0
   fi
-  read -r -p "$prompt" reply
+  if [[ "${KONCREET_UI_COLOR:-0}" -eq 1 ]]; then
+    read -r -p "${UI_CYAN}${prompt}${UI_RESET}" reply
+  else
+    read -r -p "$prompt" reply
+  fi
   echo "${reply:-$default}"
 }
 
 confirm() {
-  # Callers pass the question only; we always append [y/N].
   local prompt="${1:-Proceed?}"
   prompt="${prompt% }"; prompt="${prompt%\[y/N\]}"; prompt="${prompt%\[Y/n\]}"; prompt="${prompt% }"
   if [[ "$KONCREET_YES" -eq 1 ]]; then
@@ -76,13 +96,17 @@ confirm() {
     return 1
   fi
   local reply
-  read -r -p "${prompt} [y/N] " reply
+  if [[ "${KONCREET_UI_COLOR:-0}" -eq 1 ]]; then
+    read -r -p "${UI_CYAN}${prompt}${UI_RESET} ${UI_DIM}[y/N]${UI_RESET} " reply
+  else
+    read -r -p "${prompt} [y/N] " reply
+  fi
   [[ "$reply" =~ ^[Yy] ]]
 }
 
-# Print planned action; skip real work when dry-run.
 plan() {
-  log_info "PLAN: $*"
+  _log_file INFO "PLAN: $*"
+  ui_muted "PLAN: $*" 2>/dev/null || echo "PLAN: $*" >&2
 }
 
 run_cmd() {
@@ -90,8 +114,7 @@ run_cmd() {
     plan "$*"
     return 0
   fi
-  log_info "RUN: $*"
-  "$@"
+  ui_run_quiet "$*" "$@"
 }
 
 # Write stdin to dest unless dry-run. Backs up existing file first.
@@ -112,7 +135,7 @@ write_file() {
   backup_file "$dest"
   mkdir -p "$(dirname "$dest")"
   printf '%s' "$content" >"$dest"
-  log_info "Wrote $dest"
+  _log_file INFO "Wrote $dest"
 }
 
 backup_file() {
@@ -123,22 +146,14 @@ backup_file() {
     return 0
   fi
   cp -a "$dest" "${dest}.koncreet.bak"
-  log_info "Backed up $dest -> ${dest}.koncreet.bak"
+  _log_file INFO "Backed up $dest -> ${dest}.koncreet.bak"
 }
 
-# Validate a Linux username (POSIX-ish).
 valid_username() {
   local u="$1"
   [[ "$u" =~ ^[a-z_][a-z0-9_-]*$ ]] && [[ ${#u} -le 32 ]]
 }
 
 print_change_plan() {
-  echo
-  echo "=== Change plan ==="
-  local line
-  for line in "$@"; do
-    echo "  - $line"
-  done
-  echo "==================="
-  echo
+  ui_change_plan "$@"
 }

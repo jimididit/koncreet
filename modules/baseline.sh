@@ -25,25 +25,21 @@ baseline_apply() {
       die "Invalid username '$new_user' (use lowercase letters, digits, _, -; max 32)"
     fi
     if id -u "$new_user" &>/dev/null; then
-      log_info "User '$new_user' already exists, skipping creation"
+      ui_skip "user $new_user already exists"
     else
-      log_info "Creating user '$new_user'"
       if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
+        ui_step_start "creating user $new_user"
         useradd -m -s /bin/bash "$new_user"
         local pass passfile
-        # Alphanumeric only — avoids /+ in base64 breaking copy-paste / PAM prompts
         pass="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 24)"
         echo "${new_user}:${pass}" | chpasswd
         passfile="/root/${new_user}.koncreet-password"
         umask 077
         printf '%s\n' "$pass" >"$passfile"
         chmod 600 "$passfile"
-        if [[ -t 1 ]]; then
-          echo "!! Generated sudo password for $new_user: $pass"
-          echo "!! Also saved at $passfile (mode 0600). Change later with: passwd $new_user"
-        else
-          log_info "Password written to $passfile (mode 0600) - not a TTY"
-        fi
+        ui_step_ok "user $new_user created"
+        ui_warn "sudo password: $pass"
+        ui_muted "  saved at $passfile — change later with: passwd $new_user"
       else
         plan "useradd -m -s /bin/bash $new_user && set sudo password"
       fi
@@ -69,40 +65,35 @@ baseline_apply() {
     else
       mkdir -p "${new_home}/.ssh"
       if [[ -n "$src_keys" ]]; then
-        # Copy if missing OR empty (fixes cp -n empty-key trap)
         if [[ ! -s "$dest_keys" ]]; then
           cp "$src_keys" "$dest_keys"
-          log_info "Copied SSH key(s) from $src_keys"
+          log_ok "SSH keys copied from $src_keys"
         else
-          log_info "authorized_keys already has content - leaving in place"
+          ui_skip "authorized_keys already has content"
         fi
       else
-        log_warn "No existing authorized_keys found to copy - add one before SSH hardening."
+        log_warn "No authorized_keys to copy — add one before SSH hardening"
         [[ -f "$dest_keys" ]] || touch "$dest_keys"
       fi
       chmod 700 "${new_home}/.ssh"
       chmod 600 "$dest_keys"
       chown -R "${new_user}:${new_user}" "${new_home}/.ssh"
 
-      # Never force-expire when keys exist: SSH key login + expired password
-      # makes PAM demand a password change and can lock the new session out.
       if koncreet_has_working_key_file "$dest_keys"; then
         chage -d "$(date -I)" "$new_user" 2>/dev/null || chage -d -1 "$new_user" || true
-        log_info "SSH keys present for $new_user — login with your key (password not expired)"
+        log_ok "SSH keys ready for $new_user (password not expired)"
       else
         chage -d 0 "$new_user" || true
-        log_warn "No SSH keys for $new_user — password expired; must change on first login"
+        log_warn "No SSH keys for $new_user — password expired on first login"
       fi
     fi
   else
-    log_info "No username given - skipping user creation"
+    ui_skip "user creation (none requested)"
   fi
 
-  log_info "sysctl hardening (cloud-safer profile)"
   write_file /etc/sysctl.d/99-koncreet.conf <<'EOF'
 # Managed by koncreet baseline
 net.ipv4.tcp_syncookies = 1
-# rp_filter=2 (loose) is safer on cloud/VPN multi-homed hosts than strict=1
 net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 net.ipv4.conf.all.accept_redirects = 0
@@ -121,56 +112,53 @@ kernel.yama.ptrace_scope = 1
 vm.swappiness = 10
 EOF
   if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
-    sysctl --system >/dev/null || log_warn "sysctl --system reported errors (some keys may be unavailable)"
+    sysctl --system >/dev/null 2>&1 || log_warn "sysctl --system reported errors (some keys may be unavailable)"
+    log_ok "sysctl drop-in"
   else
     plan "sysctl --system"
   fi
 
-  log_info "Swap"
   if swapon --show 2>/dev/null | grep -q .; then
-    log_info "Swap already active, skipping"
-    swapon --show || true
+    ui_skip "swap already active"
   else
     local ram_mb swap_mb
     ram_mb="$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"
     swap_mb=$(( ram_mb < 2048 ? ram_mb : 2048 ))
-    log_info "Creating ${swap_mb}M swapfile"
     if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
       plan "create /swapfile ${swap_mb}M and enable"
     else
+      ui_step_start "creating ${swap_mb}M swapfile"
       if ! fallocate -l "${swap_mb}M" /swapfile 2>/dev/null; then
         dd if=/dev/zero of=/swapfile bs=1M count="$swap_mb" status=none
       fi
       chmod 600 /swapfile
-      mkswap /swapfile
+      mkswap /swapfile >/dev/null
       swapon /swapfile
       if ! grep -q '^/swapfile' /etc/fstab; then
         echo '/swapfile none swap sw 0 0' >>/etc/fstab
       fi
+      ui_step_ok "swapfile ${swap_mb}M"
     fi
   fi
 
-  log_info "Capping journald size"
   write_file /etc/systemd/journald.conf.d/99-koncreet-cap.conf <<'EOF'
 [Journal]
 SystemMaxUse=200M
 EOF
   if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
-    systemctl restart systemd-journald
+    ui_run_quiet "journald cap 200M" systemctl restart systemd-journald
   else
     plan "systemctl restart systemd-journald"
   fi
 
   if [[ -n "$timezone" ]]; then
-    log_info "Setting timezone to $timezone"
     if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
-      timedatectl set-timezone "$timezone" || log_warn "timedatectl set-timezone failed"
+      ui_run_quiet "timezone $timezone" timedatectl set-timezone "$timezone" || log_warn "timedatectl set-timezone failed"
     else
       plan "timedatectl set-timezone $timezone"
     fi
   fi
 
-  log_info "Ensuring time sync"
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
     plan "ensure systemd-timesyncd or chrony active"
   else
@@ -178,44 +166,42 @@ EOF
       systemctl enable --now systemd-timesyncd 2>/dev/null || true
     fi
     if systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-      log_info "systemd-timesyncd is active"
+      log_ok "timesync: systemd-timesyncd"
     elif systemctl is-active --quiet chrony 2>/dev/null || systemctl is-active --quiet chronyd 2>/dev/null; then
-      log_info "chrony is active"
+      log_ok "timesync: chrony"
     else
       pkg_install chrony || true
       systemctl enable --now chrony 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || \
-        log_warn "Could not start a time sync service - set one up manually"
+        log_warn "Could not start a time sync service"
     fi
   fi
-
-  log_info "Baseline done."
 }
 
 baseline_status() {
-  echo "--- baseline ---"
+  ui_header "baseline"
   if [[ -f /etc/sysctl.d/99-koncreet.conf ]]; then
-    echo "sysctl: /etc/sysctl.d/99-koncreet.conf present"
+    ui_kv "sysctl" "99-koncreet.conf"
   else
-    echo "sysctl: not applied by koncreet"
+    ui_kv "sysctl" "not applied"
   fi
   if swapon --show 2>/dev/null | grep -q .; then
-    echo "swap: active"
+    ui_kv "swap" "active"
   else
-    echo "swap: none"
+    ui_kv "swap" "none"
   fi
   if [[ -f /etc/systemd/journald.conf.d/99-koncreet-cap.conf ]]; then
-    echo "journald: capped by koncreet"
+    ui_kv "journald" "capped 200M"
   else
-    echo "journald: no koncreet cap"
+    ui_kv "journald" "no koncreet cap"
   fi
   if command -v timedatectl &>/dev/null; then
-    timedatectl show -p Timezone --value 2>/dev/null | awk '{print "timezone: "$0}'
+    ui_kv "timezone" "$(timedatectl show -p Timezone --value 2>/dev/null || echo unknown)"
   fi
   if systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-    echo "timesync: systemd-timesyncd active"
+    ui_kv "timesync" "systemd-timesyncd"
   elif systemctl is-active --quiet chrony 2>/dev/null || systemctl is-active --quiet chronyd 2>/dev/null; then
-    echo "timesync: chrony active"
+    ui_kv "timesync" "chrony"
   else
-    echo "timesync: unknown / inactive"
+    ui_kv "timesync" "inactive"
   fi
 }

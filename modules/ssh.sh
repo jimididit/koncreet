@@ -14,7 +14,7 @@ ssh_plan_lines() {
 ssh_check() {
   local user
   if user="$(koncreet_ssh_harden_gate)"; then
-    echo "OK: '$user' can still log in with keys after hardening."
+    log_ok "safe to harden — '$user' has SSH keys"
     return 0
   fi
   return 1
@@ -24,10 +24,10 @@ ssh_apply() {
   local safe_user
   if ! safe_user="$(koncreet_ssh_harden_gate)"; then
     if [[ "${SUDO_USER:-root}" == "root" || "${EUID:-0}" -eq 0 ]]; then
-      log_error "You appear to be operating as root without a non-root key user."
-      log_error "Run: koncreet baseline apply --user YOURNAME   then copy your key, then re-run ssh apply."
+      log_error "Operating as root without a non-root key user"
+      log_error "Run: koncreet baseline apply --user YOURNAME  then re-run ssh apply"
     fi
-    die "Refusing to disable password auth / root login."
+    die "Refusing to disable password auth / root login"
   fi
 
   write_file "$KONCREET_SSH_DROPIN" <<'EOF'
@@ -42,27 +42,25 @@ EOF
 
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
     plan "sshd -t && reload SSH"
-    log_info "Would harden SSH; keep a session open and test: ssh ${safe_user}@host"
+    ui_muted "Would harden SSH; test: ssh ${safe_user}@host"
     return 0
   fi
 
-  log_info "Validating sshd config"
-  if ! sshd -t; then
-    log_error "sshd -t failed - rolling back, nothing applied."
+  ui_step_start "validate sshd config"
+  if ! sshd -t 2>/dev/null; then
+    ui_step_fail "sshd -t failed — rolling back"
     rm -f "$KONCREET_SSH_DROPIN"
     exit 1
   fi
-
+  ui_step_ok "sshd config valid"
   koncreet_ssh_reload
-  echo
-  log_info "Done. Keep this session open and test a NEW connection:"
-  echo "  ssh ${safe_user}@<this-host>"
-  echo "If the new connection fails: sudo koncreet ssh undo"
+  log_ok "password auth + root login disabled"
+  ui_warn "Keep this session open — test: ssh ${safe_user}@<host>"
+  ui_muted "  if locked out: sudo koncreet ssh undo"
 }
 
 ssh_undo() {
   if [[ ! -f "$KONCREET_SSH_DROPIN" ]]; then
-    # also remove legacy drop-in from old harden-ssh.sh
     if [[ -f /etc/ssh/sshd_config.d/99-harden.conf ]]; then
       if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
         plan "rm /etc/ssh/sshd_config.d/99-harden.conf && reload"
@@ -70,10 +68,10 @@ ssh_undo() {
       fi
       rm -f /etc/ssh/sshd_config.d/99-harden.conf
       koncreet_ssh_reload
-      log_info "Removed legacy 99-harden.conf"
+      log_ok "removed legacy 99-harden.conf"
       return 0
     fi
-    log_info "Nothing to undo - $KONCREET_SSH_DROPIN does not exist."
+    ui_skip "nothing to undo"
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
@@ -83,26 +81,26 @@ ssh_undo() {
   backup_file "$KONCREET_SSH_DROPIN"
   rm -f "$KONCREET_SSH_DROPIN"
   koncreet_ssh_reload
-  log_info "Reverted: password auth and root login policy removed (package defaults apply)."
+  log_ok "SSH harden drop-in removed (package defaults apply)"
 }
 
 ssh_status() {
-  echo "--- ssh ---"
+  ui_header "ssh"
   if [[ -f "$KONCREET_SSH_DROPIN" ]]; then
-    echo "harden drop-in: $KONCREET_SSH_DROPIN present"
-    grep -E '^(PasswordAuthentication|PermitRootLogin|MaxAuthTries|ClientAlive)' "$KONCREET_SSH_DROPIN" || true
+    ui_kv "harden" "99-koncreet.conf"
+    ui_kv "PasswordAuth" "$(grep -E '^PasswordAuthentication' "$KONCREET_SSH_DROPIN" | awk '{print $2}')"
+    ui_kv "PermitRoot" "$(grep -E '^PermitRootLogin' "$KONCREET_SSH_DROPIN" | awk '{print $2}')"
   elif [[ -f /etc/ssh/sshd_config.d/99-harden.conf ]]; then
-    echo "harden drop-in: legacy 99-harden.conf present"
+    ui_kv "harden" "legacy 99-harden.conf"
   else
-    echo "harden drop-in: not applied"
+    ui_kv "harden" "not applied"
   fi
-  echo "unit: $(koncreet_ssh_unit)"
-  echo "listen ports:"
-  koncreet_ssh_listen_ports | sed 's/^/  /'
+  ui_kv "unit" "$(koncreet_ssh_unit)"
+  ui_kv "ports" "$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
   local u
   if u="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
-    echo "non-root key user: $u"
+    ui_kv "key user" "$u"
   else
-    echo "non-root key user: NONE (unsafe to harden)"
+    ui_kv "key user" "NONE"
   fi
 }

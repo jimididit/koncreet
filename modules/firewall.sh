@@ -12,7 +12,6 @@ declare -A KONCREET_FW_SERVICES=(
   [vsftpd]="20/tcp 21/tcp"
 )
 
-# Services that must not be opened publicly without --public
 declare -A KONCREET_FW_SENSITIVE=(
   [mysql]=1
   [vsftpd]=1
@@ -58,14 +57,14 @@ firewall_snapshot() {
   fi
   if [[ -d /etc/ufw ]]; then
     tar -czf "${KONCREET_UFW_SNAPSHOT}.tgz" -C / etc/ufw 2>/dev/null || true
-    log_info "UFW rules snapshotted to ${KONCREET_UFW_SNAPSHOT}.tgz"
+    _log_file INFO "UFW rules snapshotted to ${KONCREET_UFW_SNAPSHOT}.tgz"
   fi
 }
 
 firewall_undo() {
   if [[ ! -f "${KONCREET_UFW_SNAPSHOT}.tgz" ]]; then
-    log_warn "No UFW snapshot found at ${KONCREET_UFW_SNAPSHOT}.tgz"
-    log_info "To disable firewall: ufw disable"
+    log_warn "No UFW snapshot at ${KONCREET_UFW_SNAPSHOT}.tgz"
+    ui_muted "To disable firewall: ufw disable"
     return 1
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
@@ -73,15 +72,14 @@ firewall_undo() {
     return 0
   fi
   tar -xzf "${KONCREET_UFW_SNAPSHOT}.tgz" -C /
-  ufw reload || true
-  log_info "Restored UFW config from snapshot. Verify: ufw status verbose"
+  ufw reload >/dev/null 2>&1 || true
+  log_ok "UFW restored from snapshot"
 }
 
 firewall_apply() {
   local requested="${1:-}"
   local public="${2:-0}"
 
-  # Validate services first - abort on unknown (no silent skip)
   local -a wanted=()
   local svc ports
   if [[ -n "$requested" ]]; then
@@ -93,7 +91,7 @@ firewall_apply() {
         die "Unknown firewall service '$svc'. Run: koncreet firewall list"
       fi
       if [[ -n "${KONCREET_FW_SENSITIVE[$svc]:-}" && "$public" -ne 1 ]]; then
-        die "Service '$svc' opens sensitive ports publicly. Re-run with --public or set firewall_public=true in config."
+        die "Service '$svc' opens sensitive ports publicly. Re-run with --public or set firewall_public=true."
       fi
     done
   fi
@@ -101,56 +99,49 @@ firewall_apply() {
   pkg_install ufw
   firewall_snapshot
 
+  local ssh_ports=()
+  while read -r p; do ssh_ports+=("$p"); done < <(koncreet_ssh_listen_ports)
+
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-    plan "ufw default deny incoming"
-    plan "ufw default allow outgoing"
-  else
-    ufw default deny incoming
-    ufw default allow outgoing
+    plan "ufw default deny incoming / allow outgoing"
+    for p in "${ssh_ports[@]}"; do plan "ufw allow ${p}/tcp"; done
+    plan "ufw --force enable"
+    return 0
   fi
 
-  local p
-  while read -r p; do
-    log_info "Allowing SSH on port ${p}/tcp"
-    if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-      plan "ufw allow ${p}/tcp"
-    else
-      ufw allow "${p}/tcp"
-    fi
-  done < <(koncreet_ssh_listen_ports)
-
+  ui_step_start "ufw default deny incoming"
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  for p in "${ssh_ports[@]}"; do
+    ufw allow "${p}/tcp" >/dev/null
+  done
   for svc in "${wanted[@]+"${wanted[@]}"}"; do
     svc="${svc// /}"
     [[ -z "$svc" || "$svc" == "ssh" ]] && continue
     ports="${KONCREET_FW_SERVICES[$svc]}"
     local port
     for port in $ports; do
-      log_info "Allowing $svc ($port)"
-      if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-        plan "ufw allow $port"
-      else
-        ufw allow "$port"
-      fi
+      ufw allow "$port" >/dev/null
     done
   done
-
-  if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-    plan "ufw --force enable"
-  else
-    ufw --force enable
-    echo
-    ufw status verbose
+  ufw --force enable >/dev/null
+  ui_step_ok "ufw deny-incoming; SSH :${ssh_ports[*]} allowed"
+  if [[ -n "$requested" ]]; then
+    log_ok "extra services: $requested"
   fi
-  log_info "Firewall done."
 }
 
 firewall_status() {
-  echo "--- firewall ---"
+  ui_header "firewall"
   if command -v ufw &>/dev/null; then
-    ufw status verbose 2>/dev/null || echo "ufw installed but status failed"
+    local st
+    st="$(ufw status 2>/dev/null | head -1 || echo unknown)"
+    ui_kv "ufw" "$st"
+    if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then
+      ufw status verbose 2>/dev/null | sed 's/^/  /' || true
+    fi
   else
-    echo "ufw: not installed"
+    ui_kv "ufw" "not installed"
   fi
-  echo "SSH listen ports detected:"
-  koncreet_ssh_listen_ports | sed 's/^/  /'
+  ui_kv "ssh ports" "$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
 }

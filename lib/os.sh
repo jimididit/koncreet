@@ -66,7 +66,7 @@ koncreet_require_supported_os() {
     log_error "Refuse rather than half-apply on ${KONCREET_OS_ID:-unknown}."
     exit 2
   fi
-  log_info "OS: $KONCREET_OS_ID $KONCREET_OS_VERSION (family=$KONCREET_OS_FAMILY)"
+  _log_file INFO "OS: $KONCREET_OS_ID $KONCREET_OS_VERSION (family=$KONCREET_OS_FAMILY)"
 }
 
 pkg_install() {
@@ -75,8 +75,8 @@ pkg_install() {
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y "$@"
+  ui_run_quiet "apt update" apt-get update -qq
+  ui_run_quiet "install $*" apt-get install -y -qq "$@"
 }
 
 # Resolve OpenSSH server systemd unit name.
@@ -102,13 +102,13 @@ koncreet_ssh_reload() {
   local unit
   unit="$(koncreet_ssh_unit)"
   if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
-    log_info "ssh.socket is present - using reload-or-restart on $unit"
+    _log_file INFO "ssh.socket is present - using reload-or-restart on $unit"
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
     plan "systemctl reload-or-restart $unit"
     return 0
   fi
-  systemctl reload-or-restart "$unit"
+  ui_run_quiet "reload $unit" systemctl reload-or-restart "$unit"
 }
 
 # Return Debian Origins-Pattern or Ubuntu Allowed-Origins snippet body (apt conf).

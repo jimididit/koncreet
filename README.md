@@ -113,6 +113,17 @@ See [`share/koncreet.conf.example`](share/koncreet.conf.example).
 
 Changes are logged to `/var/log/koncreet.log` (or `./koncreet.log` in dry-run / non-root). Overwrites are backed up as `*.koncreet.bak`.
 
+## Output
+
+Terminal output is compact by default: section headers, `[OK]` / `[FAIL]` / `[SKIP]`, and a spinner for long steps. Full command output always goes to the log file.
+
+| Flag / env | Effect |
+|------------|--------|
+| `-v` / `--verbose` | Stream apt/systemctl output live (still logged) |
+| `NO_COLOR=1` | Disable ANSI colors (also off when stdout is not a TTY) |
+
+`self-install` only creates a symlink; the repo (and `lib/`) must stay where they are. Re-run `sudo ./koncreet self-install` after moving the checkout.
+
 ## Development
 
 ```bash
