@@ -28,7 +28,7 @@ First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe de
 ## 60-second start
 
 ```bash
-git clone <this-repo> && cd koncreet
+git clone https://github.com/jimididit/koncreet.git && cd koncreet
 sudo ./koncreet                  # interactive menu - prints a change plan first
 ```
 
