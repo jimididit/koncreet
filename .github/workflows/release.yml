@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches VERSION
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="$(tr -d '[:space:]' < VERSION)"
+          EXPECTED="v${VER}"
+          if [[ "$TAG" != "$EXPECTED" ]]; then
+            echo "Tag $TAG does not match VERSION file ($EXPECTED)"
+            exit 1
+          fi
+          echo "Releasing $EXPECTED"
+
+      - name: Build release tarball
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/koncreet"
+          for path in \
+            koncreet \
+            VERSION \
+            install.sh \
+            README.md \
+            LICENSE \
+            lib \
+            modules \
+            share \
+            assets \
+            tests
+          do
+            if [[ -e "$path" ]]; then
+              cp -a "$path" "$STAGE/koncreet/"
+            fi
+          done
+          chmod +x "$STAGE/koncreet/koncreet" "$STAGE/koncreet/install.sh"
+          tar -C "$STAGE" -czf koncreet.tar.gz koncreet
+          ls -la koncreet.tar.gz install.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER="$(tr -d '[:space:]' < VERSION)"
+          REPO="${{ github.repository }}"
+          gh release create "v${VER}" \
+            --title "koncreet v${VER}" \
+            --notes "$(printf '%s\n' \
+              "## koncreet v${VER}" \
+              "" \
+              "### Install (no git required)" \
+              "" \
+              '```bash' \
+              "curl -fsSL https://github.com/${REPO}/releases/latest/download/install.sh | sudo bash" \
+              '```' \
+              "" \
+              "Pin this version:" \
+              "" \
+              '```bash' \
+              "KONCREET_VERSION=${VER} curl -fsSL https://github.com/${REPO}/releases/download/v${VER}/install.sh | sudo bash" \
+              '```')" \
+            koncreet.tar.gz \
+            install.sh

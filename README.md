@@ -1,7 +1,7 @@
 # Koncreet
 
 <p align="center">
-  <img src="assets/banner.png" alt="koncreet — first-hour server hardening" width="832" />
+  <img src="assets/banner.svg" alt="koncreet — first-hour server hardening" width="832" />
 </p>
 
 First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe defaults, optional config for power users.
@@ -27,6 +27,23 @@ First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe de
 
 ## 60-second start
 
+No git required (Debian/Ubuntu VPS with `curl`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jimididit/koncreet/main/install.sh | sudo bash
+sudo koncreet
+```
+
+After the first GitHub Release, the same one-liner can use the release asset (also what CI publishes):
+
+```bash
+curl -fsSL https://github.com/jimididit/koncreet/releases/latest/download/install.sh | sudo bash
+```
+
+Pin a version: `KONCREET_VERSION=0.1.0` before the pipe. Installs into `/opt/koncreet` and symlinks `koncreet` onto your PATH.
+
+Or clone with git:
+
 ```bash
 git clone https://github.com/jimididit/koncreet.git && cd koncreet
 sudo ./koncreet                  # interactive menu - prints a change plan first
@@ -42,6 +59,17 @@ sudo ./koncreet apply -c ./koncreet.conf --yes         # apply
 sudo ./koncreet status
 ```
 
+## Versioning
+
+Current version lives in [`VERSION`](VERSION) (semver). Check with `koncreet version` (no root needed).
+
+To cut a release:
+
+1. Bump `VERSION` (e.g. `0.1.0` → `0.2.0`) and commit
+2. Tag matching that file: `git tag v0.2.0 && git push origin v0.2.0`
+3. GitHub Actions builds `koncreet.tar.gz` + attaches `install.sh` to the release
+
+The tag **must** be `v` + the contents of `VERSION` or the release workflow fails.
 ## Commands
 
 ```text
@@ -59,9 +87,10 @@ sudo ./koncreet updates apply --reboot --reboot-hour 04:00
 sudo ./koncreet ssh check | apply | undo
 sudo ./koncreet self-install             # symlink into /usr/local/bin
 sudo ./koncreet self-uninstall
+./koncreet version                       # no root required
 ```
 
-Global flags: `-n` / `--dry-run`, `-y` / `--yes`, `-c` / `--config FILE`, `-v` / `--verbose`.
+Global flags: `-n` / `--dry-run`, `-y` / `--yes`, `-c` / `--config FILE`, `-v` / `--verbose`, `-V` / `--version`.
 
 `sheriff` is an alias of `fail2ban` (same commands either way).
 

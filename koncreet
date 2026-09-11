@@ -6,6 +6,14 @@ set -euo pipefail
 KONCREET_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export KONCREET_ROOT
 
+koncreet_version() {
+  if [[ -f "$KONCREET_ROOT/VERSION" ]]; then
+    tr -d '[:space:]' <"$KONCREET_ROOT/VERSION"
+  else
+    printf '%s\n' "dev"
+  fi
+}
+
 # shellcheck source=lib/common.sh
 source "$KONCREET_ROOT/lib/common.sh"
 # shellcheck source=lib/ui.sh
@@ -52,10 +60,12 @@ Global flags:
   -y, --yes           Non-interactive (assume yes / use defaults)
   -c, --config FILE   Load key=value config (see share/koncreet.conf.example)
   -v, --verbose       Extra logging
+  -V, --version       Print version and exit
   -h, --help          Show this help
 
 Commands:
   help                         Show this help
+  version                      Print version
   status                       Show hardening status
   apply                        Apply modules from --config (or defaults)
   menu                         Interactive menu (default)
@@ -94,6 +104,10 @@ parse_globals() {
       -n|--dry-run) KONCREET_DRY_RUN=1; shift ;;
       -y|--yes) KONCREET_YES=1; shift ;;
       -v|--verbose) KONCREET_VERBOSE=1; shift ;;
+      -V|--version)
+        printf 'koncreet %s\n' "$(koncreet_version)"
+        exit 0
+        ;;
       -c|--config)
         [[ $# -ge 2 ]] || die "--config requires a file"
         KONCREET_CONFIG="$2"
@@ -124,6 +138,7 @@ bool_public() {
 
 cmd_status() {
   ui_header "koncreet status"
+  ui_kv "version" "$(koncreet_version)"
   ui_kv "OS" "${KONCREET_OS_ID} ${KONCREET_OS_VERSION}"
   ui_kv "dry-run" "${KONCREET_DRY_RUN}"
   ui_kv "yes" "${KONCREET_YES}"
@@ -542,6 +557,10 @@ main() {
 
   case "$cmd" in
     help|-h|--help) usage; exit 0 ;;
+    version|-V|--version)
+      printf 'koncreet %s\n' "$(koncreet_version)"
+      exit 0
+      ;;
   esac
 
   # status/help can run without root for partial info, but modules need root
