@@ -57,11 +57,25 @@ sudo ./koncreet fail2ban unban 1.2.3.4
 sudo ./koncreet updates apply            # no auto-reboot
 sudo ./koncreet updates apply --reboot --reboot-hour 04:00
 sudo ./koncreet ssh check | apply | undo
+sudo ./koncreet self-install             # symlink into /usr/local/bin
+sudo ./koncreet self-uninstall
 ```
 
 Global flags: `-n` / `--dry-run`, `-y` / `--yes`, `-c` / `--config FILE`, `-v` / `--verbose`.
 
 `sheriff` is an alias of `fail2ban` (same commands either way).
+
+## Install to PATH
+
+After cloning, optionally symlink into `/usr/local/bin` (does not move the repo):
+
+```bash
+sudo ./koncreet self-install     # -> /usr/local/bin/koncreet
+sudo koncreet status             # works from any directory
+sudo ./koncreet self-uninstall   # remove the symlink only
+```
+
+The interactive menu offers this after **Run everything**, and `apply` offers it too (skipped with `--yes`).
 
 ## Recovery
 
