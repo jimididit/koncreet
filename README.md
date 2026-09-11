@@ -1,168 +1,100 @@
 # Koncreet
 
 <p align="center">
-  <img src="assets/banner.svg" alt="koncreet — first-hour server hardening" width="832" />
+  <img src="assets/banner.svg" alt="koncreet - first-hour server hardening" width="832" />
 </p>
 
-First-hour hardening toolkit for a new Linux VPS. Readable Bash, lockout-safe defaults, optional config for power users.
+First-hour hardening for a fresh Linux VPS. Plain Bash, change plans before it touches anything, and defaults that try not to lock you out.
 
-**Supported OS:** Debian 12/13 and Ubuntu 22.04/24.04 only. Other distros are refused with a clear message.
+**Debian 12/13 and Ubuntu 22.04/24.04 only.**
 
-## What it does
-
-| Module | What you get |
-|--------|----------------|
-| **baseline** | Non-root sudo user + SSH key copy, cloud-safer sysctl, swap if missing, journald size cap, timezone/timesync |
-| **firewall** | ufw default-deny; always opens your *real* SSH listen port(s) first |
-| **fail2ban** | systemd backend (works without `/var/log/auth.log`), ufw banaction when ufw is active |
-| **updates** | Distro-correct `unattended-upgrades` (Debian origins vs Ubuntu/ESM); auto-reboot **off** by default |
-| **ssh** | Disable password auth + root login **only** if a non-root user has keys; drop-in + undo |
-
-## What it will not do
-
-- CIS/STIG compliance, fleet management, or HTML audit reports
-- Arch, SUSE, Alpine, Fedora/RHEL (yet)
-- Open MySQL/FTP to the world without an explicit `--public` / `firewall_public=true`
-- Surprise reboots (unless you opt in)
-
-## 60-second start
-
-No git required (Debian/Ubuntu VPS with `curl`):
+## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jimididit/koncreet/main/install.sh | sudo bash
 sudo koncreet
 ```
 
-After the first GitHub Release, the same one-liner can use the release asset (also what CI publishes):
+That drops the toolkit in `/opt/koncreet` and puts `koncreet` on your PATH. Prefer a release build once they exist:
 
 ```bash
 curl -fsSL https://github.com/jimididit/koncreet/releases/latest/download/install.sh | sudo bash
 ```
 
-Pin a version: `KONCREET_VERSION=0.1.0` before the pipe. Installs into `/opt/koncreet` and symlinks `koncreet` onto your PATH.
-
-Or clone with git:
+Pin with `KONCREET_VERSION=0.1.0`. Or clone and run from the tree:
 
 ```bash
 git clone https://github.com/jimididit/koncreet.git && cd koncreet
-sudo ./koncreet                  # interactive menu - prints a change plan first
+sudo ./koncreet
 ```
 
-Power user / automation:
+## What you get
+
+| Module | |
+|--------|--|
+| **baseline** | Sudo user + SSH keys, safer sysctl, swap if missing, journald cap, timezone/NTP |
+| **firewall** | ufw default-deny; your real SSH port(s) opened first |
+| **fail2ban** | systemd backend; ufw bans when ufw is active |
+| **updates** | Distro-correct unattended security updates; auto-reboot off unless you ask |
+| **ssh** | Turns off password auth and root login only if a non-root user already has keys |
+
+It will **not** do CIS/STIG, manage a fleet, or open MySQL/FTP to the world without `--public`.
+
+## Usage
+
+Interactive menu is the default. Every apply path prints a change plan first.
 
 ```bash
-cp share/koncreet.conf.example ./koncreet.conf
-# edit user=, firewall_services=, etc.
-sudo ./koncreet --dry-run apply -c ./koncreet.conf   # preview
-sudo ./koncreet apply -c ./koncreet.conf --yes         # apply
-sudo ./koncreet status
+sudo koncreet status
+sudo koncreet baseline apply --user deploy
+sudo koncreet firewall apply https
+sudo koncreet fail2ban apply ssh
+sudo koncreet updates apply
+sudo koncreet ssh check
+sudo koncreet ssh apply
 ```
 
-## Versioning
-
-Current version lives in [`VERSION`](VERSION) (semver). Check with `koncreet version` (no root needed).
-
-To cut a release:
-
-1. Bump `VERSION` (e.g. `0.1.0` → `0.2.0`) and commit
-2. Tag matching that file: `git tag v0.2.0 && git push origin v0.2.0`
-3. GitHub Actions builds `koncreet.tar.gz` + attaches `install.sh` to the release
-
-The tag **must** be `v` + the contents of `VERSION` or the release workflow fails.
-## Commands
-
-```text
-sudo ./koncreet [flags]                 # menu
-sudo ./koncreet status
-sudo ./koncreet apply -c FILE [--yes]
-
-sudo ./koncreet baseline apply --user deploy [--timezone UTC]
-sudo ./koncreet firewall apply https
-sudo ./koncreet firewall apply mysql --public
-sudo ./koncreet fail2ban apply ssh
-sudo ./koncreet fail2ban unban 1.2.3.4
-sudo ./koncreet updates apply            # no auto-reboot
-sudo ./koncreet updates apply --reboot --reboot-hour 04:00
-sudo ./koncreet ssh check | apply | undo
-sudo ./koncreet self-install             # symlink into /usr/local/bin
-sudo ./koncreet self-uninstall
-./koncreet version                       # no root required
-```
-
-Global flags: `-n` / `--dry-run`, `-y` / `--yes`, `-c` / `--config FILE`, `-v` / `--verbose`, `-V` / `--version`.
-
-`sheriff` is an alias of `fail2ban` (same commands either way).
-
-## Install to PATH
-
-After cloning, optionally symlink into `/usr/local/bin` (does not move the repo):
+Config-driven run:
 
 ```bash
-sudo ./koncreet self-install     # -> /usr/local/bin/koncreet
-sudo koncreet status             # works from any directory
-sudo ./koncreet self-uninstall   # remove the symlink only
+cp /opt/koncreet/share/koncreet.conf.example ./koncreet.conf
+# edit, then:
+sudo koncreet --dry-run apply -c ./koncreet.conf
+sudo koncreet apply -c ./koncreet.conf --yes
 ```
 
-The interactive menu offers this after **Run everything**, and `apply` offers it too (skipped with `--yes`).
+Flags: `-n` dry-run, `-y` assume yes, `-c` config, `-v` verbose, `-V` version.
 
-## Recovery
+`sheriff` is an alias for `fail2ban`.
 
-Keep your current SSH session open after hardening. Test a **new** connection before you disconnect.
+## If something goes wrong
+
+Keep the session you hardened from open. Test a **new** SSH login before you disconnect.
 
 | Problem | Fix |
 |---------|-----|
-| Cannot SSH after harden | From the open session: `sudo ./koncreet ssh undo` |
-| Locked out by ufw | Console/VNC: `sudo ufw disable` or `sudo ./koncreet firewall undo` |
-| Banned by fail2ban | `sudo ./koncreet fail2ban unban YOUR.IP` or `sudo ./koncreet fail2ban undo` |
-| Need password for new user | From the open root session: `cat /root/USER.koncreet-password`. If login forces a password change and fails: `chage -d $(date -I) USER` then reconnect with your SSH key. |
-| Too many authentication failures | Your SSH agent is offering too many keys. Use `ssh -o IdentitiesOnly=yes -i ~/.ssh/your_key bot@host` |
+| Can't SSH after harden | `sudo koncreet ssh undo` |
+| Locked out by ufw | Console: `sudo ufw disable` |
+| Banned by fail2ban | `sudo koncreet fail2ban unban YOUR.IP` |
+| Need the new user password | `cat /root/USER.koncreet-password` |
+| Forced password change fails | `chage -d $(date -I) USER` then reconnect with your key |
+| Too many authentication failures | `ssh -o IdentitiesOnly=yes -i ~/.ssh/your_key user@host` |
 
-## Config reference
+Logs land in `/var/log/koncreet.log`. Overwritten files get a `*.koncreet.bak`.
 
-See [`share/koncreet.conf.example`](share/koncreet.conf.example).
+## Config
 
-| Key | Meaning |
-|-----|---------|
-| `modules` | Comma-separated: `baseline,firewall,fail2ban,updates,ssh` |
-| `user` | Sudo user to create (blank = skip) |
-| `firewall_services` | Extra ufw services (e.g. `https,nginx`) |
-| `firewall_public` | `true` to allow mysql/vsftpd publicly |
-| `fail2ban_services` | Jails to enable (default `ssh`) |
-| `ssh_harden` | `true`/`false` |
-| `auto_reboot` | Unattended reboot after kernel updates (default `false`) |
-| `reboot_hour` | e.g. `04:00` |
-| `timezone` | e.g. `UTC` (blank = leave alone) |
-
-## Sysctl notes
-
-`/etc/sysctl.d/99-koncreet.conf` uses **loose** `rp_filter=2` (cloud/VPN friendly), plus `kptr_restrict`, `dmesg_restrict`, and `yama.ptrace_scope=1`. See the file for every knob.
-
-## Logging
-
-Changes are logged to `/var/log/koncreet.log` (or `./koncreet.log` in dry-run / non-root). Overwrites are backed up as `*.koncreet.bak`.
-
-## Output
-
-Terminal output is compact by default: section headers, `[OK]` / `[FAIL]` / `[SKIP]`, and a spinner for long steps. Full command output always goes to the log file.
-
-| Flag / env | Effect |
-|------------|--------|
-| `-v` / `--verbose` | Stream apt/systemctl output live (still logged) |
-| `NO_COLOR=1` | Disable ANSI colors (also off when stdout is not a TTY) |
-
-`self-install` only creates a symlink; the repo (and `lib/`) must stay where they are. Re-run `sudo ./koncreet self-install` after moving the checkout.
+Keys and defaults: [`share/koncreet.conf.example`](share/koncreet.conf.example).
 
 ## Development
 
 ```bash
-# Unit tests (bash; no root required)
 bash tests/run.sh
-
-# ShellCheck (if installed)
-shellcheck koncreet lib/*.sh modules/*.sh
+shellcheck koncreet lib/*.sh modules/*.sh   # if you have shellcheck
 ```
+
+Version is in [`VERSION`](VERSION). Tag releases as `v` + that number (CI builds the tarball).
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+[MIT](LICENSE)

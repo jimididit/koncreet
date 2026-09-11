@@ -14,7 +14,7 @@ ssh_plan_lines() {
 ssh_check() {
   local user
   if user="$(koncreet_ssh_harden_gate)"; then
-    log_ok "safe to harden — '$user' has SSH keys"
+    log_ok "safe to harden - '$user' has SSH keys"
     return 0
   fi
   return 1
@@ -48,14 +48,14 @@ EOF
 
   ui_step_start "validate sshd config"
   if ! sshd -t 2>/dev/null; then
-    ui_step_fail "sshd -t failed — rolling back"
+    ui_step_fail "sshd -t failed - rolling back"
     rm -f "$KONCREET_SSH_DROPIN"
     exit 1
   fi
   ui_step_ok "sshd config valid"
   koncreet_ssh_reload
   log_ok "password auth + root login disabled"
-  ui_warn "Keep this session open — test: ssh ${safe_user}@<host>"
+  ui_warn "Keep this session open - test: ssh ${safe_user}@<host>"
   ui_muted "  if locked out: sudo koncreet ssh undo"
 }
 

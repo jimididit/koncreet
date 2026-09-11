@@ -39,7 +39,7 @@ baseline_apply() {
         chmod 600 "$passfile"
         ui_step_ok "user $new_user created"
         ui_warn "sudo password: $pass"
-        ui_muted "  saved at $passfile — change later with: passwd $new_user"
+        ui_muted "  saved at $passfile - change later with: passwd $new_user"
       else
         plan "useradd -m -s /bin/bash $new_user && set sudo password"
       fi
@@ -72,7 +72,7 @@ baseline_apply() {
           ui_skip "authorized_keys already has content"
         fi
       else
-        log_warn "No authorized_keys to copy — add one before SSH hardening"
+        log_warn "No authorized_keys to copy - add one before SSH hardening"
         [[ -f "$dest_keys" ]] || touch "$dest_keys"
       fi
       chmod 700 "${new_home}/.ssh"
@@ -84,7 +84,7 @@ baseline_apply() {
         log_ok "SSH keys ready for $new_user (password not expired)"
       else
         chage -d 0 "$new_user" || true
-        log_warn "No SSH keys for $new_user — password expired on first login"
+        log_warn "No SSH keys for $new_user - password expired on first login"
       fi
     fi
   else

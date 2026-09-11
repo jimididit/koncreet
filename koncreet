@@ -153,7 +153,7 @@ maybe_confirm_plan() {
   local -a lines=("$@")
   print_change_plan "${lines[@]}"
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
-    ui_muted "Dry-run — no changes will be made."
+    ui_muted "Dry-run - no changes will be made."
     return 0
   fi
   if ! confirm "Apply these changes?"; then
@@ -304,7 +304,7 @@ cmd_self_install() {
 cmd_self_uninstall() {
   local dest="$KONCREET_PATH_LINK"
   if [[ ! -e "$dest" && ! -L "$dest" ]]; then
-    log_info "Nothing to remove — $dest does not exist."
+    log_info "Nothing to remove - $dest does not exist."
     return 0
   fi
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
@@ -315,7 +315,7 @@ cmd_self_uninstall() {
     rm -f "$dest"
     log_info "Removed symlink $dest"
   else
-    die "$dest exists but is not a symlink — remove it manually if intended"
+    die "$dest exists but is not a symlink - remove it manually if intended"
   fi
 }
 

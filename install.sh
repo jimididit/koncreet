@@ -56,7 +56,7 @@ if [[ "$VERSION" == "latest" ]]; then
     download "$RELEASE_URL" "$ARCHIVE"
     FETCHED="release:latest"
   else
-    echo "No GitHub release asset yet — falling back to main branch archive…"
+    echo "No GitHub release asset yet - falling back to main branch archive…"
     download "https://github.com/${REPO}/archive/refs/heads/main.tar.gz" "$ARCHIVE"
     FETCHED="branch:main"
   fi

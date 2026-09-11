@@ -77,7 +77,7 @@ fail2ban_apply() {
       die "Unknown fail2ban service '$svc'. Run: koncreet fail2ban list"
     fi
     if [[ -n "${KONCREET_F2B_HINTS[$svc]:-}" && ! -e "${KONCREET_F2B_HINTS[$svc]}" ]]; then
-      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found — enabling jail '$jail' anyway"
+      log_warn "$svc: ${KONCREET_F2B_HINTS[$svc]} not found - enabling jail '$jail' anyway"
     fi
     all_jails[$jail]=1
   done
@@ -188,7 +188,7 @@ fail2ban_unban() {
 
 fail2ban_whitelist() {
   local ip="${1:?Usage: koncreet fail2ban whitelist <ip>}"
-  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet — run: koncreet fail2ban apply"
+  [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet - run: koncreet fail2ban apply"
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
   if grep -qw "$ip" <<<"$ignoreip"; then
