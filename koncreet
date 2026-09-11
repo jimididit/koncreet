@@ -3,7 +3,7 @@
 # Usage: sudo ./koncreet [global-flags] <command> [args]
 set -euo pipefail
 
-KONCREET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KONCREET_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export KONCREET_ROOT
 
 # shellcheck source=lib/common.sh
