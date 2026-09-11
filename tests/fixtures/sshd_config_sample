@@ -1,0 +1,5 @@
+# Sample sshd_config fragment for port parsing tests
+# Port commented out should be ignored
+#Port 22
+Port 2222
+PermitRootLogin yes

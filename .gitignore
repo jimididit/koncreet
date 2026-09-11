@@ -1,0 +1,35 @@
+# --- Editor / local tooling ---
+.cursor/
+.cursorindexingignore
+.specstory/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Koncreet runtime / secrets (never commit) ---
+koncreet.log
+*.log
+*.koncreet.bak
+*.koncreet-password
+/root/*.koncreet-password
+
+# Local apply config (keep share/koncreet.conf.example tracked)
+/koncreet.conf
+*.conf.local
+
+# UFW / state snapshots if copied into the tree
+/var/
+*.tgz
+*.tar.gz
+
+# --- Test / shellcheck artifacts ---
+shellcheck*
+.tmp/
+tmp/

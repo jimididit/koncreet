@@ -1,0 +1,28 @@
+# Example koncreet.conf — copy and edit, then:
+#   sudo ./koncreet apply --config ./koncreet.conf --yes
+#   sudo ./koncreet --dry-run apply -c ./koncreet.conf
+
+# Comma-separated modules in recommended order
+modules=baseline,firewall,fail2ban,updates,ssh
+
+# Non-root sudo user to create (blank = skip user creation)
+user=deploy
+
+# Extra ufw services besides SSH (comma-separated). See: koncreet firewall list
+firewall_services=https
+
+# Allow sensitive services (mysql, vsftpd) to the world — default false
+firewall_public=false
+
+# fail2ban jails (comma-separated). See: koncreet fail2ban list
+fail2ban_services=ssh
+
+# Disable password + root SSH login (requires non-root user with keys)
+ssh_harden=true
+
+# Automatic reboot after kernel updates (default false — safer for beginners)
+auto_reboot=false
+reboot_hour=04:00
+
+# Optional timezone (e.g. UTC, America/New_York). Blank = leave unchanged
+timezone=
