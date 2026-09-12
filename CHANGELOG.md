@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- fail2ban: tolerate unset SSH_CONNECTION under `set -u` (CI dry-run / non-SSH shells)
+
 ## 0.2.2
 
 - CI: ShellCheck fails on errors only (sourced CFG_* vars trip SC2034 across files)

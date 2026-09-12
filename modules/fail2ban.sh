@@ -91,7 +91,8 @@ fail2ban_apply() {
 
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
-  local my_ip="${SSH_CONNECTION%% *}"
+  local my_ip="${SSH_CONNECTION-}"
+  my_ip="${my_ip%% *}"
   if [[ -n "$my_ip" ]] && ! grep -qw "$my_ip" <<<"$ignoreip"; then
     local add_wl=0
     if [[ "$KONCREET_YES" -eq 1 ]]; then
