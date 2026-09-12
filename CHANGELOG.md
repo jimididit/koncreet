@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Mark `koncreet` / `install.sh` executable in git; run version tests via `bash` for CI
+
 ## 0.2.0
 
 - `koncreet doctor` — apply-readiness checks

@@ -189,7 +189,7 @@ assert_eq "${KONCREET_UI_COLOR}" "0" "TERM=dumb disables color"
 echo "== version file =="
 ver="$(tr -d '[:space:]' <"$ROOT/VERSION")"
 assert_ok "VERSION is semver-ish" bash -c "[[ '$ver' =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]"
-out="$("$ROOT/koncreet" version 2>/dev/null | head -n1 || true)"
+out="$(bash "$ROOT/koncreet" version 2>/dev/null | head -n1 || true)"
 assert_eq "$out" "koncreet $ver" "koncreet version output"
 
 echo "== ui_run_quiet exit codes =="
