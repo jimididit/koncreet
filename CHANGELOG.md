@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- CI: ShellCheck fails on errors only (sourced CFG_* vars trip SC2034 across files)
+
 ## 0.2.1
 
 - Mark `koncreet` / `install.sh` executable in git; run version tests via `bash` for CI

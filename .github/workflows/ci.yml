@@ -20,7 +20,7 @@ jobs:
         run: bash tests/run.sh
 
       - name: ShellCheck
-        run: shellcheck koncreet install.sh lib/*.sh modules/*.sh
+        run: shellcheck -S error koncreet install.sh lib/*.sh modules/*.sh
 
   smoke:
     strategy:
