@@ -8,8 +8,15 @@ modules=baseline,firewall,fail2ban,updates,ssh
 # Non-root sudo user to create (blank = skip user creation)
 user=deploy
 
+# Optional: install this pubkey for the user (or use pubkey_file=)
+# pubkey=ssh-ed25519 AAAA... comment
+# pubkey_file=/root/.ssh/authorized_keys
+
 # Extra ufw services besides SSH (comma-separated). See: koncreet firewall list
 firewall_services=https
+
+# Extra raw ports (N/tcp or N/udp), comma-separated
+# firewall_ports=8080/tcp,8443/tcp
 
 # Allow sensitive services (mysql, vsftpd) to the world - default false
 firewall_public=false

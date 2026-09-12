@@ -143,6 +143,37 @@ else
   echo "  PASS: mysql without --public aborts"
   PASS=$((PASS + 1))
 fi
+assert_ok "port spec 8080/tcp" firewall_is_port_spec "8080/tcp"
+assert_fail "bare port not a spec" firewall_is_port_spec "8080"
+if ( firewall_apply "8080" 0 ) 2>/dev/null; then
+  echo "  FAIL: bare port should abort"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: bare port aborts"
+  PASS=$((PASS + 1))
+fi
+if ( KONCREET_DRY_RUN=1 firewall_apply "8080/tcp" 0 ) 2>/dev/null; then
+  echo "  PASS: custom port dry-run"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: custom port dry-run"
+  FAIL=$((FAIL + 1))
+fi
+
+echo "== config pubkey / firewall_ports =="
+# shellcheck source=/dev/null
+source "$ROOT/lib/config.sh"
+TMP="$(mktemp)"
+cat >"$TMP" <<'EOF'
+modules=baseline
+user=deploy
+pubkey_file=/tmp/fake.pub
+firewall_ports=8080/tcp
+EOF
+koncreet_config_load "$TMP"
+assert_eq "$KONCREET_CFG_PUBKEY_FILE" "/tmp/fake.pub" "pubkey_file"
+assert_eq "$KONCREET_CFG_FIREWALL_PORTS" "8080/tcp" "firewall_ports"
+rm -f "$TMP"
 
 echo "== UI / NO_COLOR =="
 # shellcheck source=/dev/null

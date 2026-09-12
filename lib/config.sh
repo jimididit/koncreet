@@ -7,12 +7,15 @@ koncreet_config_defaults() {
   KONCREET_CFG_MODULES="baseline,firewall,fail2ban,updates,ssh"
   KONCREET_CFG_USER=""
   KONCREET_CFG_FIREWALL_SERVICES=""
+  KONCREET_CFG_FIREWALL_PORTS=""
   KONCREET_CFG_FAIL2BAN_SERVICES="ssh"
   KONCREET_CFG_SSH_HARDEN="true"
   KONCREET_CFG_AUTO_REBOOT="false"
   KONCREET_CFG_REBOOT_HOUR="04:00"
   KONCREET_CFG_FIREWALL_PUBLIC="false"
   KONCREET_CFG_TIMEZONE=""
+  KONCREET_CFG_PUBKEY=""
+  KONCREET_CFG_PUBKEY_FILE=""
 }
 
 koncreet_config_load() {
@@ -39,12 +42,15 @@ koncreet_config_load() {
       modules) KONCREET_CFG_MODULES="$val" ;;
       user) KONCREET_CFG_USER="$val" ;;
       firewall_services) KONCREET_CFG_FIREWALL_SERVICES="$val" ;;
+      firewall_ports) KONCREET_CFG_FIREWALL_PORTS="$val" ;;
       fail2ban_services) KONCREET_CFG_FAIL2BAN_SERVICES="$val" ;;
       ssh_harden) KONCREET_CFG_SSH_HARDEN="$val" ;;
       auto_reboot) KONCREET_CFG_AUTO_REBOOT="$val" ;;
       reboot_hour) KONCREET_CFG_REBOOT_HOUR="$val" ;;
       firewall_public) KONCREET_CFG_FIREWALL_PUBLIC="$val" ;;
       timezone) KONCREET_CFG_TIMEZONE="$val" ;;
+      pubkey) KONCREET_CFG_PUBKEY="$val" ;;
+      pubkey_file) KONCREET_CFG_PUBKEY_FILE="$val" ;;
       *) die "Unknown config key: $key" ;;
     esac
   done <"$file"

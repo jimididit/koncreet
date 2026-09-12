@@ -25,6 +25,8 @@ source "$KONCREET_ROOT/lib/os.sh"
 source "$KONCREET_ROOT/lib/sshd.sh"
 # shellcheck source=lib/config.sh
 source "$KONCREET_ROOT/lib/config.sh"
+# shellcheck source=lib/doctor.sh
+source "$KONCREET_ROOT/lib/doctor.sh"
 # shellcheck source=modules/baseline.sh
 source "$KONCREET_ROOT/modules/baseline.sh"
 # shellcheck source=modules/firewall.sh
@@ -42,8 +44,12 @@ KONCREET_VERBOSE="${KONCREET_VERBOSE:-0}"
 KONCREET_CONFIG="${KONCREET_CONFIG:-}"
 KONCREET_FIREWALL_PUBLIC="${KONCREET_FIREWALL_PUBLIC:-0}"
 KONCREET_TIMEZONE="${KONCREET_TIMEZONE:-}"
+KONCREET_PUBKEY="${KONCREET_PUBKEY:-}"
+KONCREET_PUBKEY_FILE="${KONCREET_PUBKEY_FILE:-}"
+KONCREET_FIREWALL_PORTS="${KONCREET_FIREWALL_PORTS:-}"
 export KONCREET_DRY_RUN KONCREET_YES KONCREET_VERBOSE KONCREET_CONFIG
 export KONCREET_FIREWALL_PUBLIC KONCREET_TIMEZONE
+export KONCREET_PUBKEY KONCREET_PUBKEY_FILE KONCREET_FIREWALL_PORTS
 
 usage() {
   ui_banner
@@ -66,14 +72,16 @@ Global flags:
 Commands:
   help                         Show this help
   version                      Print version
+  doctor                       Apply-readiness checks (no root required)
   status                       Show hardening status
   apply                        Apply modules from --config (or defaults)
   menu                         Interactive menu (default)
+  uninstall [--purge]          Remove PATH link + /opt install (optional undo modules)
 
-  baseline apply [--user NAME] [--timezone TZ]
-  baseline status
+  baseline apply [--user NAME] [--timezone TZ] [--pubkey KEY|--pubkey-file FILE]
+  baseline status | undo
 
-  firewall apply [svc,svc] [--public]
+  firewall apply [svc|N/tcp,...] [--public]
   firewall list | status | undo
 
   fail2ban|sheriff apply [svc,svc]
@@ -92,6 +100,7 @@ Recovery:
   sudo ufw disable
   sudo ./koncreet fail2ban unban <ip>
   sudo ./koncreet fail2ban undo
+  sudo ./koncreet baseline undo
 
 See README.md for full docs.
 EOF
@@ -165,7 +174,10 @@ maybe_confirm_plan() {
 cmd_apply_config() {
   koncreet_config_load "${KONCREET_CONFIG}"
   KONCREET_TIMEZONE="${KONCREET_CFG_TIMEZONE}"
-  export KONCREET_TIMEZONE
+  KONCREET_PUBKEY="${KONCREET_CFG_PUBKEY:-$KONCREET_PUBKEY}"
+  KONCREET_PUBKEY_FILE="${KONCREET_CFG_PUBKEY_FILE:-$KONCREET_PUBKEY_FILE}"
+  KONCREET_FIREWALL_PORTS="${KONCREET_CFG_FIREWALL_PORTS:-$KONCREET_FIREWALL_PORTS}"
+  export KONCREET_TIMEZONE KONCREET_PUBKEY KONCREET_PUBKEY_FILE KONCREET_FIREWALL_PORTS
 
   local public
   public="$(bool_public "${KONCREET_CFG_FIREWALL_PUBLIC}")"
@@ -181,7 +193,7 @@ cmd_apply_config() {
         plan+=("${_pl[@]}")
         ;;
       firewall)
-        mapfile -t _pl < <(firewall_plan_lines "${KONCREET_CFG_FIREWALL_SERVICES}" "$public")
+        mapfile -t _pl < <(firewall_plan_lines "${KONCREET_CFG_FIREWALL_SERVICES}" "$public" "${KONCREET_FIREWALL_PORTS}")
         plan+=("${_pl[@]}")
         ;;
       fail2ban|sheriff)
@@ -194,8 +206,12 @@ cmd_apply_config() {
         ;;
       ssh)
         if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          mapfile -t _pl < <(ssh_plan_lines)
-          plan+=("${_pl[@]}")
+          if ssh_check >/dev/null 2>&1; then
+            mapfile -t _pl < <(ssh_plan_lines)
+            plan+=("${_pl[@]}")
+          else
+            plan+=("SKIP SSH harden (no non-root key user yet)")
+          fi
         fi
         ;;
       *)
@@ -213,7 +229,7 @@ cmd_apply_config() {
     case "$m" in
       baseline|firewall|fail2ban|sheriff|updates) run_mods+=("$m") ;;
       ssh)
-        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
+        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}" && ssh_check >/dev/null 2>&1; then
           run_mods+=("ssh")
         fi
         ;;
@@ -230,7 +246,7 @@ cmd_apply_config() {
         ;;
       firewall)
         ui_overall_next "Firewall"
-        firewall_apply "${KONCREET_CFG_FIREWALL_SERVICES}" "$public"
+        firewall_apply "${KONCREET_CFG_FIREWALL_SERVICES}" "$public" "${KONCREET_FIREWALL_PORTS}"
         ;;
       fail2ban|sheriff)
         ui_overall_next "fail2ban"
@@ -242,8 +258,12 @@ cmd_apply_config() {
         ;;
       ssh)
         if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          ui_overall_next "SSH hardening"
-          ssh_apply
+          if ssh_check >/dev/null 2>&1; then
+            ui_overall_next "SSH hardening"
+            ssh_apply
+          else
+            ui_skip "ssh harden (no key user yet)"
+          fi
         else
           ui_skip "ssh_harden=false"
         fi
@@ -251,6 +271,7 @@ cmd_apply_config() {
     esac
   done
   ui_done_summary
+  ui_post_apply_checklist "${KONCREET_CFG_USER:-${KONCREET_LAST_BASELINE_USER:-}}"
   maybe_offer_path_install
 }
 
@@ -316,6 +337,59 @@ cmd_self_uninstall() {
     log_info "Removed symlink $dest"
   else
     die "$dest exists but is not a symlink - remove it manually if intended"
+  fi
+}
+
+# Remove PATH link and install tree. --purge also undoes hardening drop-ins.
+cmd_uninstall() {
+  local purge=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --purge) purge=1; shift ;;
+      *) die "Usage: koncreet uninstall [--purge]" ;;
+    esac
+  done
+
+  if [[ "$purge" -eq 1 ]]; then
+    ui_header "purge hardening drop-ins"
+    ssh_undo || true
+    fail2ban_undo || true
+    firewall_undo || true
+    baseline_undo || true
+  else
+    ui_muted "Leaving hardening drop-ins in place (pass --purge to undo them)"
+  fi
+
+  local dest="$KONCREET_PATH_LINK"
+  local link_target=""
+  if [[ -L "$dest" ]]; then
+    link_target="$(readlink -f "$dest" 2>/dev/null || true)"
+  fi
+
+  local install_dir="${KONCREET_INSTALL_DIR:-/opt/koncreet}"
+  local root_resolved install_resolved
+  root_resolved="$(readlink -f "$KONCREET_ROOT")"
+  install_resolved="$(readlink -f "$install_dir" 2>/dev/null || echo "$install_dir")"
+
+  if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
+    plan "remove PATH link $dest (if ours)"
+    [[ "$root_resolved" == "$install_resolved" ]] && plan "rm -rf $install_dir"
+    return 0
+  fi
+
+  if [[ -n "$link_target" && "$link_target" == "$(readlink -f "$(koncreet_script_path)")" ]]; then
+    rm -f "$dest"
+    log_ok "removed $dest"
+  elif [[ -L "$dest" || -e "$dest" ]]; then
+    log_warn "left $dest alone (does not point at this tree)"
+  fi
+
+  if [[ "$root_resolved" == "$install_resolved" && -d "$install_resolved" ]]; then
+    rm -rf "$install_resolved"
+    log_ok "removed $install_resolved"
+  else
+    ui_muted "Tree is $KONCREET_ROOT (not $install_dir) — remove manually if desired:"
+    ui_muted "  sudo rm -rf \"$KONCREET_ROOT\""
   fi
 }
 
@@ -406,27 +480,42 @@ EOF
         user="$(ask "New sudo username (blank to skip): ")"
         tz="$(ask "Timezone (blank to skip): ")"
         KONCREET_TIMEZONE="$tz"
-        svcs="$(ask "Firewall services besides ssh (blank=none): ")"
+        svcs="$(ask "Firewall services/ports besides ssh (blank=none): ")"
         fsvcs="$(ask "fail2ban services [ssh]: " "ssh")"
+        local do_ssh=0
+        if ssh_check >/dev/null 2>&1; then
+          do_ssh=1
+        fi
         local -a all_plan=()
         mapfile -t _pl < <(baseline_plan_lines "$user"); all_plan+=("${_pl[@]}")
-        mapfile -t _pl < <(firewall_plan_lines "$svcs" 0); all_plan+=("${_pl[@]}")
+        mapfile -t _pl < <(firewall_plan_lines "$svcs" 0 ""); all_plan+=("${_pl[@]}")
         mapfile -t _pl < <(fail2ban_plan_lines "$fsvcs"); all_plan+=("${_pl[@]}")
         mapfile -t _pl < <(updates_plan_lines "false" "04:00"); all_plan+=("${_pl[@]}")
-        mapfile -t _pl < <(ssh_plan_lines); all_plan+=("${_pl[@]}")
+        if [[ "$do_ssh" -eq 1 ]]; then
+          mapfile -t _pl < <(ssh_plan_lines); all_plan+=("${_pl[@]}")
+        else
+          all_plan+=("SKIP SSH harden (no non-root key user yet)")
+        fi
         maybe_confirm_plan "${all_plan[@]}"
-        ui_overall_init 5
+        local steps=4
+        [[ "$do_ssh" -eq 1 ]] && steps=5
+        ui_overall_init "$steps"
         ui_overall_next "Baseline"
         baseline_apply "$user"
         ui_overall_next "Firewall"
-        firewall_apply "$svcs" 0
+        firewall_apply "$svcs" 0 ""
         ui_overall_next "fail2ban"
         fail2ban_apply "$fsvcs"
         ui_overall_next "Updates"
         updates_apply "false" "04:00"
-        ui_overall_next "SSH hardening"
-        if ssh_check; then ssh_apply; else ui_skip "SSH harden (no key user yet)"; fi
+        if [[ "$do_ssh" -eq 1 ]]; then
+          ui_overall_next "SSH hardening"
+          ssh_apply
+        else
+          ui_skip "SSH harden (no key user yet)"
+        fi
         ui_done_summary
+        ui_post_apply_checklist "${user:-${KONCREET_LAST_BASELINE_USER:-}}"
         maybe_offer_path_install
         ;;
       7) cmd_status ;;
@@ -447,6 +536,8 @@ dispatch_module() {
         case "$1" in
           --user) user="$2"; shift 2 ;;
           --timezone) tz="$2"; shift 2 ;;
+          --pubkey) KONCREET_PUBKEY="$2"; export KONCREET_PUBKEY; shift 2 ;;
+          --pubkey-file) KONCREET_PUBKEY_FILE="$2"; export KONCREET_PUBKEY_FILE; shift 2 ;;
           *)
             if [[ -z "$user" && "$sub" == "apply" && "$1" != -* ]]; then
               user="$1"; shift
@@ -462,14 +553,16 @@ dispatch_module() {
           mapfile -t _pl < <(baseline_plan_lines "$user")
           maybe_confirm_plan "${_pl[@]}"
           baseline_apply "$user"
+          ui_post_apply_checklist "$user"
           ;;
         status) baseline_status ;;
-        *) die "Usage: koncreet baseline {apply|status}" ;;
+        undo) baseline_undo ;;
+        *) die "Usage: koncreet baseline {apply|status|undo}" ;;
       esac
       ;;
     firewall)
       local sub="${1:-status}"; shift || true
-      local services="" public=0
+      local services="" public=0 ports=""
       case "$sub" in
         list) firewall_list_services ;;
         status) firewall_status ;;
@@ -478,15 +571,16 @@ dispatch_module() {
           while [[ $# -gt 0 ]]; do
             case "$1" in
               --public) public=1; shift ;;
+              --ports) ports="$2"; shift 2 ;;
               *)
                 if [[ -z "$services" && "$1" != -* ]]; then services="$1"; shift
                 else die "Unknown firewall arg: $1"; fi
                 ;;
             esac
           done
-          mapfile -t _pl < <(firewall_plan_lines "$services" "$public")
+          mapfile -t _pl < <(firewall_plan_lines "$services" "$public" "$ports")
           maybe_confirm_plan "${_pl[@]}"
-          firewall_apply "$services" "$public"
+          firewall_apply "$services" "$public" "$ports"
           ;;
         *) die "Usage: koncreet firewall {apply|list|status|undo}" ;;
       esac
@@ -565,26 +659,34 @@ main() {
 
   # PATH install/uninstall: root only (any OS). Hardening modules need a supported distro.
   case "$cmd" in
-    self-install|self-uninstall)
+    self-install|self-uninstall|uninstall)
       require_root "$@"
       ;;
     menu|apply|baseline|firewall|fail2ban|sheriff|updates|ssh|status)
       require_root "$@"
       koncreet_require_supported_os
       ;;
+    doctor)
+      # read-only readiness; no root/OS hard gate
+      ;;
   esac
 
   if [[ -n "$KONCREET_CONFIG" && "$cmd" != "apply" ]]; then
     koncreet_config_load "$KONCREET_CONFIG"
     KONCREET_TIMEZONE="${KONCREET_CFG_TIMEZONE:-$KONCREET_TIMEZONE}"
+    KONCREET_PUBKEY="${KONCREET_CFG_PUBKEY:-$KONCREET_PUBKEY}"
+    KONCREET_PUBKEY_FILE="${KONCREET_CFG_PUBKEY_FILE:-$KONCREET_PUBKEY_FILE}"
+    KONCREET_FIREWALL_PORTS="${KONCREET_CFG_FIREWALL_PORTS:-$KONCREET_FIREWALL_PORTS}"
   fi
 
   case "$cmd" in
     menu) cmd_menu ;;
     apply) cmd_apply_config ;;
     status) cmd_status ;;
+    doctor) cmd_doctor ;;
     self-install) cmd_self_install ;;
     self-uninstall) cmd_self_uninstall ;;
+    uninstall) cmd_uninstall "$@" ;;
     baseline|firewall|fail2ban|sheriff|updates|ssh)
       dispatch_module "$cmd" "$@"
       ;;

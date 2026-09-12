@@ -179,6 +179,23 @@ ui_done_summary() {
   printf '%s\n' "$(ui_colorize "$UI_GREEN$UI_BOLD" "Done")$(ui_colorize "$UI_DIM" " in ${elapsed}s · log: $lp")" >&2
 }
 
+# After hardening: keep session open, verify new login, recovery hints
+# Optional arg: username whose password file may exist under /root/
+ui_post_apply_checklist() {
+  local user="${1:-}"
+  echo >&2
+  printf '%s\n' "$(ui_colorize "$UI_BOLD" "Before you disconnect")" >&2
+  printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2
+  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "1.")" "Open a NEW SSH session now — keep this one open until it works" >&2
+  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "2.")" "sudo koncreet status" >&2
+  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "3.")" "If locked out: sudo koncreet ssh undo | sudo ufw disable | sudo koncreet fail2ban unban YOUR.IP" >&2
+  if [[ -n "$user" && -f "/root/${user}.koncreet-password" ]]; then
+    printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "4.")" "New user password: cat /root/${user}.koncreet-password" >&2
+  fi
+  printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2
+  echo >&2
+}
+
 # Change plan box
 ui_change_plan() {
   echo >&2
