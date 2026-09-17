@@ -73,7 +73,7 @@ baseline_install_keys() {
         ui_skip "authorized_keys already has content"
       fi
     else
-      log_warn "No authorized_keys to copy — add one before SSH hardening"
+      log_warn "No authorized_keys to copy - add one before SSH hardening"
       log_warn "  tip: ssh-copy-id ${new_user}@host   or: koncreet baseline apply --user $new_user --pubkey-file ~/.ssh/id_ed25519.pub"
       [[ -f "$dest_keys" ]] || touch "$dest_keys"
     fi
@@ -103,7 +103,7 @@ baseline_write_motd() {
   date_s="$(date -u '+%Y-%m-%d')"
   write_file "$KONCREET_MOTD" <<EOF
 #!/bin/sh
-echo "Hardened by koncreet on ${date_s} — sudo koncreet status"
+echo "Hardened by koncreet on ${date_s} - sudo koncreet status"
 EOF
   if [[ "$KONCREET_DRY_RUN" -eq 0 ]]; then
     chmod 755 "$KONCREET_MOTD"

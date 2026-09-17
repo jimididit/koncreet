@@ -186,7 +186,7 @@ ui_post_apply_checklist() {
   echo >&2
   printf '%s\n' "$(ui_colorize "$UI_BOLD" "Before you disconnect")" >&2
   printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2
-  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "1.")" "Open a NEW SSH session now — keep this one open until it works" >&2
+  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "1.")" "Open a NEW SSH session now - keep this one open until it works" >&2
   printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "2.")" "sudo koncreet status" >&2
   printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "3.")" "If locked out: sudo koncreet ssh undo | sudo ufw disable | sudo koncreet fail2ban unban YOUR.IP" >&2
   if [[ -n "$user" && -f "/root/${user}.koncreet-password" ]]; then

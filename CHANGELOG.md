@@ -14,7 +14,7 @@
 
 ## 0.2.0
 
-- `koncreet doctor` — apply-readiness checks
+- `koncreet doctor` - apply-readiness checks
 - Post-apply checklist after `apply` / Run everything
 - Baseline: `--pubkey` / `--pubkey-file`, `baseline undo`, logrotate + MOTD
 - Firewall: custom `N/tcp` / `N/udp` and `firewall_ports=` config

@@ -388,7 +388,7 @@ cmd_uninstall() {
     rm -rf "$install_resolved"
     log_ok "removed $install_resolved"
   else
-    ui_muted "Tree is $KONCREET_ROOT (not $install_dir) — remove manually if desired:"
+    ui_muted "Tree is $KONCREET_ROOT (not $install_dir) - remove manually if desired:"
     ui_muted "  sudo rm -rf \"$KONCREET_ROOT\""
   fi
 }
