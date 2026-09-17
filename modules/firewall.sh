@@ -112,7 +112,7 @@ firewall_parse_request() {
       firewall_validate_port_spec "$tok"
       _fw_ports+=("$tok")
     elif [[ "$tok" =~ ^[0-9]+$ ]]; then
-      die "Bare port '$tok' needs a proto — use ${tok}/tcp or ${tok}/udp"
+      die "Bare port '$tok' needs a proto - use ${tok}/tcp or ${tok}/udp"
     elif [[ -z "${KONCREET_FW_SERVICES[$tok]:-}" ]]; then
       die "Unknown firewall service '$tok'. Run: koncreet firewall list"
     else

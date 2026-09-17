@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# koncreet doctor — apply-readiness checks (any OS; unsupported marked FAIL)
+# koncreet doctor - apply-readiness checks (any OS; unsupported marked FAIL)
 # shellcheck shell=bash
 
 : "${KONCREET_DOCTOR_FAILS:=0}"
@@ -50,7 +50,7 @@ cmd_doctor() {
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     doctor_ok "running as root (apply ready)"
   else
-    doctor_warn "not root — install/version/doctor ok; apply needs: sudo koncreet …"
+    doctor_warn "not root - install/version/doctor ok; apply needs: sudo koncreet …"
   fi
 
   # --- apt ---
@@ -68,7 +68,7 @@ cmd_doctor() {
       fi
     fi
     if [[ "$locked" -eq 1 ]]; then
-      doctor_warn "apt lock held — wait for unattended-upgrades / another apt to finish"
+      doctor_warn "apt lock held - wait for unattended-upgrades / another apt to finish"
     fi
   else
     doctor_fail "apt-get not found"
@@ -80,7 +80,7 @@ cmd_doctor() {
   if [[ -n "$avail_kb" && "$avail_kb" -ge 524288 ]]; then
     doctor_ok "disk free on /: $((avail_kb / 1024))M (swap possible)"
   elif [[ -n "$avail_kb" ]]; then
-    doctor_warn "low disk on /: $((avail_kb / 1024))M — swap creation may fail"
+    doctor_warn "low disk on /: $((avail_kb / 1024))M - swap creation may fail"
   else
     doctor_warn "could not read free disk on /"
   fi
@@ -95,7 +95,7 @@ cmd_doctor() {
   if key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
     doctor_ok "non-root key user: $key_user (SSH harden safe)"
   else
-    doctor_warn "no non-root user with authorized_keys — run baseline before ssh apply"
+    doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
   fi
 
   if [[ -f /etc/ssh/sshd_config.d/99-koncreet.conf ]]; then
@@ -117,16 +117,16 @@ cmd_doctor() {
       doctor_warn "PATH: $link -> ${resolved:-?} (expected $want)"
     fi
   else
-    doctor_warn "not on PATH — run: sudo koncreet self-install (or re-run install.sh)"
+    doctor_warn "not on PATH - run: sudo koncreet self-install (or re-run install.sh)"
   fi
 
   echo >&2
   if [[ "$KONCREET_DOCTOR_FAILS" -gt 0 ]]; then
-    ui_error "doctor: ${KONCREET_DOCTOR_FAILS} fail(s), ${KONCREET_DOCTOR_WARNS} warn(s) — not apply-ready"
+    ui_error "doctor: ${KONCREET_DOCTOR_FAILS} fail(s), ${KONCREET_DOCTOR_WARNS} warn(s) - not apply-ready"
     return 1
   fi
   if [[ "$KONCREET_DOCTOR_WARNS" -gt 0 ]]; then
-    ui_warn "doctor: 0 fails, ${KONCREET_DOCTOR_WARNS} warn(s) — review before apply"
+    ui_warn "doctor: 0 fails, ${KONCREET_DOCTOR_WARNS} warn(s) - review before apply"
     return 0
   fi
   ui_success "doctor: all clear"
