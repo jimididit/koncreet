@@ -76,21 +76,24 @@ jobs:
           set -euo pipefail
           VER="$(tr -d '[:space:]' < VERSION)"
           REPO="${{ github.repository }}"
+          chmod +x scripts/changelog-section.sh
+          NOTES="$(mktemp)"
+          {
+            printf '%s\n' "## koncreet v${VER}" ""
+            printf '%s\n' "### Changes" ""
+            bash scripts/changelog-section.sh "$VER"
+            printf '%s\n' "" "### Install (no git required)" ""
+            printf '%s\n' '```bash'
+            printf '%s\n' "curl -fsSL https://github.com/${REPO}/releases/latest/download/install.sh | sudo bash"
+            printf '%s\n' '```' ""
+            printf '%s\n' "Pin this version:" ""
+            printf '%s\n' '```bash'
+            printf '%s\n' "KONCREET_VERSION=${VER} curl -fsSL https://github.com/${REPO}/releases/download/v${VER}/install.sh | sudo bash"
+            printf '%s\n' '```'
+          } >"$NOTES"
           gh release create "v${VER}" \
             --title "koncreet v${VER}" \
-            --notes "$(printf '%s\n' \
-              "## koncreet v${VER}" \
-              "" \
-              "### Install (no git required)" \
-              "" \
-              '```bash' \
-              "curl -fsSL https://github.com/${REPO}/releases/latest/download/install.sh | sudo bash" \
-              '```' \
-              "" \
-              "Pin this version:" \
-              "" \
-              '```bash' \
-              "KONCREET_VERSION=${VER} curl -fsSL https://github.com/${REPO}/releases/download/v${VER}/install.sh | sudo bash" \
-              '```')" \
+            --notes-file "$NOTES" \
             koncreet.tar.gz \
             install.sh
+          rm -f "$NOTES"
