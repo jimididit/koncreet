@@ -95,18 +95,36 @@ cmd_doctor() {
     doctor_warn "SSH unit=${unit} but listen port undetected (firewall apply will refuse)"
   fi
 
-  local key_user
-  if key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
-    doctor_ok "non-root key user: $key_user (SSH harden safe)"
+  local key_user dropin=""
+  if key_user="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
+    doctor_ok "SSH harden ready: '$key_user' has keys and sudo"
+  elif key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
+    doctor_warn "'$key_user' has SSH keys but no sudo - ssh apply will refuse until: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $key_user"
   else
     doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
   fi
 
-  if [[ -f /etc/ssh/sshd_config.d/99-koncreet.conf ]]; then
-    if command -v sshd >/dev/null 2>&1 && sshd -t 2>/dev/null; then
-      doctor_ok "sshd -t ok (koncreet harden drop-in present)"
+  # Prefer current drop-in; still notice a leftover legacy name.
+  if [[ -f /etc/ssh/sshd_config.d/00-koncreet.conf ]]; then
+    dropin="/etc/ssh/sshd_config.d/00-koncreet.conf"
+  elif [[ -f /etc/ssh/sshd_config.d/99-koncreet.conf ]]; then
+    dropin="/etc/ssh/sshd_config.d/99-koncreet.conf"
+    doctor_warn "legacy 99-koncreet.conf present - re-run: koncreet ssh apply"
+  elif [[ -f /etc/ssh/sshd_config.d/99-harden.conf ]]; then
+    dropin="/etc/ssh/sshd_config.d/99-harden.conf"
+    doctor_warn "legacy 99-harden.conf present - re-run: koncreet ssh apply"
+  fi
+  if [[ -n "$dropin" ]] && command -v sshd >/dev/null 2>&1; then
+    if ! sshd -t 2>/dev/null; then
+      doctor_fail "sshd -t failed with $(basename "$dropin") present"
     else
-      doctor_fail "sshd -t failed with 99-koncreet.conf present"
+      local -a bad=()
+      mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
+      if [[ "${#bad[@]}" -gt 0 ]]; then
+        doctor_warn "SSH harden not fully in effect: ${bad[*]} (see: koncreet ssh status)"
+      else
+        doctor_ok "sshd -t ok; password auth + root login off ($(basename "$dropin"))"
+      fi
     fi
   fi
 
