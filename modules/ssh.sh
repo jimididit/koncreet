@@ -78,6 +78,11 @@ ssh_confirm_sudo_password() {
   fi
 }
 
+# Why a multi-module run leaves SSH alone, and what to do next.
+ssh_skip_reason() {
+  echo "SSH harden - no non-root sudo user with SSH keys before this run. Once you can log in as that user and sudo, run: koncreet ssh apply"
+}
+
 ssh_check() {
   local user
   if user="$(koncreet_ssh_harden_gate)"; then

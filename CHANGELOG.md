@@ -7,6 +7,7 @@
 - fail2ban: detect your SSH client IP under `sudo` (walks parent process environment, then `who -m`); warn when it can't; `whitelist` validates the IP
 - firewall: parse Ubuntu 24.04 `ListenStream=0.0.0.0:22` as port 22 (was 0, which made `ufw allow` fail)
 - Error/warning/info messages (including every `die`) were silently dropped from the terminal; they now print
+- apply: SSH hardening is decided once before the run, so a plan that says "SKIP SSH harden" no longer hardens SSH after `baseline` creates the user in the same run
 
 ## 0.2.3
 

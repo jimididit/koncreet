@@ -56,6 +56,8 @@ sudo koncreet --dry-run apply -c ./koncreet.conf
 sudo koncreet apply -c ./koncreet.conf --yes
 ```
 
+SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`.
+
 Flags: `-n` dry-run, `-y` assume yes, `-c` config, `-v` verbose, `-V` version.
 
 `sheriff` is an alias for `fail2ban`. Uninstall: `sudo koncreet uninstall` (add `--purge` to undo drop-ins too).
