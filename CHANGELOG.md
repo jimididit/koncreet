@@ -9,6 +9,8 @@
 - Error/warning/info messages (including every `die`) were silently dropped from the terminal; they now print
 - apply: SSH hardening is decided once before the run, so a plan that says "SKIP SSH harden" no longer hardens SSH after `baseline` creates the user in the same run
 - CI: `tests/integration.sh` runs lockout scenarios against a real sshd, sudo and ufw rule parser on Debian 12/13 and Ubuntu 22.04/24.04
+- dry-run: no longer asks the fail2ban whitelist question (shown as a `PLAN:` line instead), no longer prints the "Before you disconnect" checklist, and ends with "Dry-run done - nothing changed"
+- log: dry-run as root logs to `/var/log/koncreet.log` (tagged `dry-run`) instead of `/opt/koncreet/koncreet.log`, which `install.sh` and `uninstall` delete; non-root runs log to `~/.local/state/koncreet/`
 
 ## 0.2.3
 

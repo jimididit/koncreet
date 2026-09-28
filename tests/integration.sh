@@ -132,6 +132,21 @@ check "second run hardens" [ -f "$DROPIN" ]
 check "second run counts SSH as a step" grep -q '\[2/2\] SSH hardening' <<<"$out"
 rm -f "$CONF"
 
+echo "== dry-run asks nothing, changes nothing, logs outside the tree =="
+reset_ssh
+rm -f "$ROOT/koncreet.log"
+: >/var/log/koncreet.log
+# script(1) gives the run a real TTY, which is when the whitelist question used to appear
+out="$(SSH_CONNECTION='198.51.100.7 51234 10.0.0.2 22' script -qec \
+  "bash '$ROOT/koncreet' --dry-run apply -c '$ROOT/share/koncreet.conf.example'" /dev/null </dev/null 2>&1)"
+check "no whitelist question" bash -c "! grep -q 'Add your IP' <<<\"\$1\"" _ "$out"
+check "whitelist shown as a plan line" grep -q 'PLAN: ask to add your IP (198.51.100.7)' <<<"$out"
+check "no 'Before you disconnect' checklist" bash -c "! grep -q 'Before you disconnect' <<<\"\$1\"" _ "$out"
+check "says nothing changed" grep -q 'Dry-run done - nothing changed' <<<"$out"
+check "no drop-in written" no_dropin
+check "no log inside the install tree" [ ! -e "$ROOT/koncreet.log" ]
+check "log tagged dry-run in /var/log" grep -q '\[INFO dry-run\] PLAN:' /var/log/koncreet.log
+
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

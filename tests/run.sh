@@ -199,6 +199,12 @@ assert_ok "VERSION is semver-ish" bash -c "[[ '$ver' =~ ^[0-9]+\.[0-9]+\.[0-9]+$
 out="$(bash "$ROOT/koncreet" version 2>/dev/null | head -n1 || true)"
 assert_eq "$out" "koncreet $ver" "koncreet version output"
 
+echo "== log path =="
+KONCREET_ROOT="$ROOT"
+lp="$(KONCREET_DRY_RUN=1 koncreet_log_path)"
+assert_ok "dry-run log is not inside the install tree" bash -c "[[ '$lp' != '$ROOT'/* ]]"
+assert_eq "$(KONCREET_DRY_RUN=1 koncreet_log_path)" "$(KONCREET_DRY_RUN=0 koncreet_log_path)" "dry-run uses the normal log path"
+
 echo "== ui_run_quiet exit codes =="
 KONCREET_ROOT="$ROOT"
 KONCREET_DRY_RUN=0

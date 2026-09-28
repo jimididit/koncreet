@@ -106,7 +106,10 @@ fail2ban_apply() {
     log_warn "Could not detect your SSH client IP - whitelist it yourself: koncreet fail2ban whitelist YOUR.IP"
   elif ! fail2ban_ip_listed "$my_ip" "$ignoreip"; then
     local add_wl=0
-    if [[ "$KONCREET_YES" -eq 1 ]]; then
+    if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
+      plan "ask to add your IP ($my_ip) to the fail2ban whitelist"
+      add_wl=1
+    elif [[ "$KONCREET_YES" -eq 1 ]]; then
       add_wl=1
     elif [[ -t 0 && -t 1 ]]; then
       local reply

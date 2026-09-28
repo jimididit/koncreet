@@ -8,12 +8,13 @@
 : "${KONCREET_VERBOSE:=0}"
 : "${KONCREET_CONFIG:=}"
 
-# Log file: system path when root and not dry-run; else local.
+# Log file: /var/log/koncreet.log as root (dry-run entries are tagged), else the
+# user's state dir. Never inside KONCREET_ROOT: install.sh and uninstall delete it.
 koncreet_log_path() {
-  if [[ "$KONCREET_DRY_RUN" -eq 1 ]] || [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    echo "${KONCREET_ROOT:-.}/koncreet.log"
-  else
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     echo "/var/log/koncreet.log"
+  else
+    echo "${XDG_STATE_HOME:-${HOME:-.}/.local/state}/koncreet/koncreet.log"
   fi
 }
 
@@ -23,11 +24,12 @@ _log_ts() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 _log_file() {
   local level="$1"; shift
   local line lp
+  [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && level="$level dry-run"
   line="$(_log_ts) [$level] $*"
   lp="$(koncreet_log_path)"
-  { mkdir -p "$(dirname "$lp")" 2>/dev/null || true
-    echo "$line" >>"$lp" 2>/dev/null || true
-  }
+  { mkdir -p "$(dirname "$lp")" || true
+    echo "$line" >>"$lp" || true
+  } 2>/dev/null
 }
 
 # Show a message via lib/ui.sh when it is loaded, else as plain stderr.
