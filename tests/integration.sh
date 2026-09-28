@@ -75,6 +75,16 @@ check "ssh apply fails" [ "$rc" -ne 0 ]
 check "drop-in rolled back" no_dropin
 check "names the overriding file" grep -q '00-aaa.conf:1:PasswordAuthentication yes' <<<"$out"
 
+echo "== Match User root re-enabling PermitRootLogin is refused =="
+reset_ssh
+make_user deploy sudo
+printf '%s\n' 'Match User root' '    PermitRootLogin yes' >"$DROPIN_DIR/60-match-root.conf"
+out="$(koncreet --yes ssh apply 2>&1)"; rc=$?
+check "ssh apply fails on Match override" [ "$rc" -ne 0 ]
+check "no drop-in left after Match refuse" no_dropin
+check "mentions Match" grep -qi 'Match' <<<"$out"
+rm -f "$DROPIN_DIR/60-match-root.conf"
+
 echo "== legacy 99-koncreet.conf is migrated =="
 reset_ssh
 printf 'PasswordAuthentication no\n' >"$DROPIN_DIR/99-koncreet.conf"

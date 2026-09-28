@@ -34,7 +34,7 @@ koncreet_user_can_sudo() {
   for g in $(id -nG "$u" 2>/dev/null); do
     [[ "$g" == "${KONCREET_SUDO_GROUP:-sudo}" || "$g" == "admin" ]] && return 0
   done
-  command -v sudo &>/dev/null && sudo -l -U "$u" 2>/dev/null | grep -q 'may run the following'
+  command -v sudo &>/dev/null && sudo -n -l -U "$u" 2>/dev/null | grep -q 'may run the following'
 }
 
 # Find a non-root user with a working SSH key. Prefer SUDO_USER, then scan /home.
@@ -130,7 +130,8 @@ koncreet_listenstream_port() {
 }
 
 # Collect SSH listen ports from sshd -T, config files, and systemd socket units.
-# Prints unique port numbers, one per line. Defaults to 22 if none found.
+# Prints unique port numbers, one per line. Returns 1 (no output) if none found;
+# callers that open the firewall must not invent port 22.
 koncreet_ssh_listen_ports() {
   local -A ports=()
   local p line
@@ -170,8 +171,7 @@ koncreet_ssh_listen_ports() {
   done
 
   if [[ "${#ports[@]}" -eq 0 ]]; then
-    echo 22
-    return 0
+    return 1
   fi
   for p in "${!ports[@]}"; do
     echo "$p"

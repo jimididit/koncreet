@@ -130,6 +130,8 @@ assert_eq "$(koncreet_listenstream_port 'ListenStream=0.0.0.0:22')" "22" "ubuntu
 assert_eq "$(koncreet_listenstream_port 'ListenStream=[::]:2222')" "2222" "ipv6 form"
 assert_fail "empty reset line" koncreet_listenstream_port 'ListenStream='
 assert_fail "commented out" koncreet_listenstream_port '#ListenStream=22'
+# Contract: when no ports are found, koncreet_ssh_listen_ports returns 1 and prints
+# nothing (firewall apply refuses). Defaulting to 22 was removed on purpose.
 
 echo "== firewall sensitive gate =="
 # shellcheck source=/dev/null
@@ -159,12 +161,33 @@ else
   echo "  PASS: bare port aborts"
   PASS=$((PASS + 1))
 fi
-if ( KONCREET_DRY_RUN=1 firewall_apply "8080/tcp" 0 ) 2>/dev/null; then
+if ( KONCREET_DRY_RUN=1
+     koncreet_ssh_listen_ports() { echo 22; }
+     firewall_apply "8080/tcp" 0 ) 2>/dev/null; then
   echo "  PASS: custom port dry-run"
   PASS=$((PASS + 1))
 else
   echo "  FAIL: custom port dry-run"
   FAIL=$((FAIL + 1))
+fi
+# No detected SSH ports: live apply must refuse; dry-run plans the refuse and exits 0.
+if ( KONCREET_DRY_RUN=1
+     koncreet_ssh_listen_ports() { return 1; }
+     firewall_apply "" 0 ) 2>/dev/null; then
+  echo "  PASS: dry-run with empty SSH ports plans refuse"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: dry-run with empty SSH ports should not die"
+  FAIL=$((FAIL + 1))
+fi
+if ( KONCREET_DRY_RUN=0
+     koncreet_ssh_listen_ports() { return 1; }
+     firewall_apply "" 0 ) 2>/dev/null; then
+  echo "  FAIL: live apply with empty SSH ports should refuse"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: live apply with empty SSH ports refuses"
+  PASS=$((PASS + 1))
 fi
 
 echo "== config pubkey / firewall_ports =="
@@ -236,6 +259,30 @@ got="$(koncreet_sshd_mismatches <<<"$overridden")"
 assert_eq "$got" "passwordauthentication yes (want no)" "cloud-init style override detected"
 assert_eq "$(koncreet_sshd_mismatches </dev/null | wc -l | tr -d ' ')" "3" "no sshd -T output fails closed"
 assert_eq "$(basename "$KONCREET_SSH_DROPIN")" "00-koncreet.conf" "drop-in sorts before 50-cloud-init.conf"
+
+# Match-block scanner rules (mirrors ssh_match_auth_overrides)
+match_tmp="$(mktemp)"
+printf '%s\n' 'Match User root' '    PermitRootLogin yes' >"$match_tmp"
+got="$(awk '
+  BEGIN { in_match = 0 }
+  {
+    k = tolower($1); v = tolower($2)
+    if (k == "match") { in_match = 1; next }
+    if (!in_match) next
+    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
+  }' "$match_tmp")"
+assert_ok "Match PermitRootLogin yes is flagged" grep -q 'permitrootlogin yes' <<<"${got,,}"
+printf '%s\n' 'PasswordAuthentication no' 'PermitRootLogin no' >"$match_tmp"
+got="$(awk '
+  BEGIN { in_match = 0 }
+  {
+    k = tolower($1); v = tolower($2)
+    if (k == "match") { in_match = 1; next }
+    if (!in_match) next
+    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
+  }' "$match_tmp")"
+assert_eq "$got" "" "global-only lines are ignored by Match scanner"
+rm -f "$match_tmp"
 
 echo "== sudo gate =="
 assert_ok "sudo group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'deploy sudo'; }; koncreet_user_can_sudo deploy"

@@ -131,6 +131,8 @@ run_cmd() {
 }
 
 # Write stdin to dest unless dry-run. Backs up existing file first.
+# Files under /etc get world-readable modes so a caller umask of 077 (or a
+# leaked umask) cannot leave apt/sysctl/fail2ban config root-only.
 write_file() {
   local dest="$1"
   local content
@@ -146,8 +148,21 @@ write_file() {
     return 0
   fi
   backup_file "$dest"
-  mkdir -p "$(dirname "$dest")"
+  local parent
+  parent="$(dirname "$dest")"
+  mkdir -p "$parent"
   printf '%s' "$content" >"$dest"
+  case "$dest" in
+    /etc/*)
+      local d="$parent"
+      while [[ "$d" == /etc || "$d" == /etc/* ]]; do
+        chmod a+rx "$d" 2>/dev/null || true
+        [[ "$d" == /etc ]] && break
+        d="$(dirname "$d")"
+      done
+      chmod a+r "$dest" 2>/dev/null || true
+      ;;
+  esac
   _log_file INFO "Wrote $dest"
 }
 
