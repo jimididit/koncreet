@@ -32,7 +32,7 @@ Or clone: `git clone https://github.com/jimididit/koncreet.git && cd koncreet &&
 | **firewall** | ufw default-deny; real SSH ports first; named services or `8080/tcp` |
 | **fail2ban** | systemd backend; ufw bans when ufw is active |
 | **updates** | Distro-correct unattended security updates; auto-reboot off unless you ask |
-| **ssh** | Disables password auth + root login only if a non-root user already has keys |
+| **ssh** | Disables password auth + root login only if a non-root sudo user already has keys; verifies the result with `sshd -T` |
 
 Not CIS/STIG, not fleet management, and not public MySQL/FTP without `--public`.
 
@@ -56,6 +56,8 @@ sudo koncreet --dry-run apply -c ./koncreet.conf
 sudo koncreet apply -c ./koncreet.conf --yes
 ```
 
+SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`.
+
 Flags: `-n` dry-run, `-y` assume yes, `-c` config, `-v` verbose, `-V` version.
 
 `sheriff` is an alias for `fail2ban`. Uninstall: `sudo koncreet uninstall` (add `--purge` to undo drop-ins too).
@@ -70,7 +72,7 @@ Keep the session you hardened from open. Test a **new** SSH login before you dis
 | Locked out by ufw | Console: `sudo ufw disable` |
 | Banned by fail2ban | `sudo koncreet fail2ban unban YOUR.IP` |
 | Undo baseline drop-ins | `sudo koncreet baseline undo` (keeps users/swap/timezone) |
-| Need the new user password | `cat /root/USER.koncreet-password` |
+| Need the new user password | `cat /root/USER.koncreet-password` (as root - save it before `ssh apply`) |
 | Forced password change fails | `chage -d $(date -I) USER` then reconnect with your key |
 | Too many authentication failures | `ssh -o IdentitiesOnly=yes -i ~/.ssh/your_key user@host` |
 
@@ -85,6 +87,8 @@ See [`share/koncreet.conf.example`](share/koncreet.conf.example) (`pubkey`, `pub
 ```bash
 bash tests/run.sh
 bash tests/smoke-dry-run.sh
+# real sshd/sudo/ufw scenarios - rewrites /etc/ssh, so only in a throwaway container:
+docker run --rm -v "$PWD":/k -w /k -e KONCREET_INTEGRATION_OK=1 ubuntu:24.04 bash tests/integration.sh
 shellcheck koncreet install.sh lib/*.sh modules/*.sh
 ```
 

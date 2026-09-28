@@ -8,12 +8,13 @@
 : "${KONCREET_VERBOSE:=0}"
 : "${KONCREET_CONFIG:=}"
 
-# Log file: system path when root and not dry-run; else local.
+# Log file: /var/log/koncreet.log as root (dry-run entries are tagged), else the
+# user's state dir. Never inside KONCREET_ROOT: install.sh and uninstall delete it.
 koncreet_log_path() {
-  if [[ "$KONCREET_DRY_RUN" -eq 1 ]] || [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    echo "${KONCREET_ROOT:-.}/koncreet.log"
-  else
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     echo "/var/log/koncreet.log"
+  else
+    echo "${XDG_STATE_HOME:-${HOME:-.}/.local/state}/koncreet/koncreet.log"
   fi
 }
 
@@ -23,11 +24,23 @@ _log_ts() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 _log_file() {
   local level="$1"; shift
   local line lp
+  [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && level="$level dry-run"
   line="$(_log_ts) [$level] $*"
   lp="$(koncreet_log_path)"
-  { mkdir -p "$(dirname "$lp")" 2>/dev/null || true
-    echo "$line" >>"$lp" 2>/dev/null || true
-  }
+  { mkdir -p "$(dirname "$lp")" || true
+    echo "$line" >>"$lp" || true
+  } 2>/dev/null
+}
+
+# Show a message via lib/ui.sh when it is loaded, else as plain stderr.
+# (Do not silence stderr here: the ui_* helpers print to stderr.)
+_log_show() {
+  local fn="$1" tag="$2"; shift 2
+  if declare -F "$fn" >/dev/null; then
+    "$fn" "$*"
+  else
+    echo "${tag}$*" >&2
+  fi
 }
 
 koncreet_log() {
@@ -35,27 +48,27 @@ koncreet_log() {
   local msg="$*"
   _log_file "$level" "$msg"
   case "$level" in
-    ERROR) ui_error "$msg" 2>/dev/null || echo "[ERROR] $msg" >&2 ;;
-    WARN)  ui_warn "$msg" 2>/dev/null || echo "[WARN] $msg" >&2 ;;
+    ERROR) _log_show ui_error "[ERROR] " "$msg" ;;
+    WARN)  _log_show ui_warn "[WARN] " "$msg" ;;
     DEBUG)
-      [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$msg" 2>/dev/null || echo "[DEBUG] $msg" >&2; }
+      if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then _log_show ui_muted "[DEBUG] " "$msg"; fi
       ;;
     INFO|*)
       # Prefer quiet structured UI from callers; INFO still shows as muted · line
-      ui_info "$msg" 2>/dev/null || echo "[INFO] $msg" >&2
+      _log_show ui_info "[INFO] " "$msg"
       ;;
   esac
 }
 
-log_info()  { _log_file INFO "$*"; ui_info "$*" 2>/dev/null || echo "$*" >&2; }
-log_warn()  { _log_file WARN "$*"; ui_warn "$*" 2>/dev/null || echo "[WARN] $*" >&2; }
-log_error() { _log_file ERROR "$*"; ui_error "$*" 2>/dev/null || echo "[ERROR] $*" >&2; }
+log_info()  { _log_file INFO "$*"; _log_show ui_info "" "$*"; }
+log_warn()  { _log_file WARN "$*"; _log_show ui_warn "[WARN] " "$*"; }
+log_error() { _log_file ERROR "$*"; _log_show ui_error "[ERROR] " "$*"; }
 log_debug() {
   _log_file DEBUG "$*"
-  [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$*" 2>/dev/null || true; }
+  if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then _log_show ui_muted "" "$*"; fi
 }
 # Success line that also hits the log
-log_ok() { _log_file INFO "$*"; ui_success "$*" 2>/dev/null || echo "[OK] $*" >&2; }
+log_ok() { _log_file INFO "$*"; _log_show ui_success "[OK] " "$*"; }
 
 die() {
   log_error "$*"
@@ -106,7 +119,7 @@ confirm() {
 
 plan() {
   _log_file INFO "PLAN: $*"
-  ui_muted "PLAN: $*" 2>/dev/null || echo "PLAN: $*" >&2
+  _log_show ui_muted "" "PLAN: $*"
 }
 
 run_cmd() {

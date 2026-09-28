@@ -24,7 +24,7 @@ firewall_public=false
 # fail2ban jails (comma-separated). See: koncreet fail2ban list
 fail2ban_services=ssh
 
-# Disable password + root SSH login (requires non-root user with keys)
+# Disable password + root SSH login (requires non-root sudo user with keys)
 ssh_harden=true
 
 # Automatic reboot after kernel updates (default false - safer for beginners)

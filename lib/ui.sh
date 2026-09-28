@@ -175,14 +175,17 @@ ui_done_summary() {
   fi
   local lp
   lp="$(koncreet_log_path 2>/dev/null || echo koncreet.log)"
+  local done_msg="Done"
+  [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && done_msg="Dry-run done - nothing changed"
   echo >&2
-  printf '%s\n' "$(ui_colorize "$UI_GREEN$UI_BOLD" "Done")$(ui_colorize "$UI_DIM" " in ${elapsed}s · log: $lp")" >&2
+  printf '%s\n' "$(ui_colorize "$UI_GREEN$UI_BOLD" "$done_msg")$(ui_colorize "$UI_DIM" " in ${elapsed}s · log: $lp")" >&2
 }
 
 # After hardening: keep session open, verify new login, recovery hints
 # Optional arg: username whose password file may exist under /root/
 ui_post_apply_checklist() {
   local user="${1:-}"
+  [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && return 0
   echo >&2
   printf '%s\n' "$(ui_colorize "$UI_BOLD" "Before you disconnect")" >&2
   printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2

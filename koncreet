@@ -185,6 +185,15 @@ cmd_apply_config() {
   local -a plan=()
   local m
   IFS=',' read -ra mods <<<"${KONCREET_CFG_MODULES}"
+
+  # Decide SSH hardening once, before anything changes, so the plan you confirm
+  # is what runs. A user that baseline creates in this same run does not count:
+  # log in as them and check sudo first, then run: koncreet ssh apply
+  local do_ssh=0
+  if [[ ",${KONCREET_CFG_MODULES// /}," == *,ssh,* ]] && cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}" \
+    && ssh_check >/dev/null 2>&1; then
+    do_ssh=1
+  fi
   for m in "${mods[@]}"; do
     m="${m// /}"
     case "$m" in
@@ -205,13 +214,11 @@ cmd_apply_config() {
         plan+=("${_pl[@]}")
         ;;
       ssh)
-        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          if ssh_check >/dev/null 2>&1; then
-            mapfile -t _pl < <(ssh_plan_lines)
-            plan+=("${_pl[@]}")
-          else
-            plan+=("SKIP SSH harden (no non-root key user yet)")
-          fi
+        if [[ "$do_ssh" -eq 1 ]]; then
+          mapfile -t _pl < <(ssh_plan_lines)
+          plan+=("${_pl[@]}")
+        elif cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
+          plan+=("SKIP $(ssh_skip_reason)")
         fi
         ;;
       *)
@@ -228,11 +235,7 @@ cmd_apply_config() {
     m="${m// /}"
     case "$m" in
       baseline|firewall|fail2ban|sheriff|updates) run_mods+=("$m") ;;
-      ssh)
-        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}" && ssh_check >/dev/null 2>&1; then
-          run_mods+=("ssh")
-        fi
-        ;;
+      ssh) [[ "$do_ssh" -eq 1 ]] && run_mods+=("ssh") ;;
     esac
   done
   ui_overall_init "${#run_mods[@]}"
@@ -257,13 +260,11 @@ cmd_apply_config() {
         updates_apply "${KONCREET_CFG_AUTO_REBOOT}" "${KONCREET_CFG_REBOOT_HOUR}"
         ;;
       ssh)
-        if cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          if ssh_check >/dev/null 2>&1; then
-            ui_overall_next "SSH hardening"
-            ssh_apply
-          else
-            ui_skip "ssh harden (no key user yet)"
-          fi
+        if [[ "$do_ssh" -eq 1 ]]; then
+          ui_overall_next "SSH hardening"
+          ssh_apply
+        elif cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
+          ui_skip "$(ssh_skip_reason)"
         else
           ui_skip "ssh_harden=false"
         fi
@@ -494,7 +495,7 @@ EOF
         if [[ "$do_ssh" -eq 1 ]]; then
           mapfile -t _pl < <(ssh_plan_lines); all_plan+=("${_pl[@]}")
         else
-          all_plan+=("SKIP SSH harden (no non-root key user yet)")
+          all_plan+=("SKIP $(ssh_skip_reason)")
         fi
         maybe_confirm_plan "${all_plan[@]}"
         local steps=4
@@ -512,7 +513,7 @@ EOF
           ui_overall_next "SSH hardening"
           ssh_apply
         else
-          ui_skip "SSH harden (no key user yet)"
+          ui_skip "$(ssh_skip_reason)"
         fi
         ui_done_summary
         ui_post_apply_checklist "${user:-${KONCREET_LAST_BASELINE_USER:-}}"
