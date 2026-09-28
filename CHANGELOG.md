@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.4
+
 - ssh: after apply, also fail closed when a `Match` block re-enables password/root/kbd-interactive auth (global `sshd -T` misses those); probe effective settings with `sshd -T -C` for root and the admin user
 - firewall: refuse to enable ufw when SSH listen ports cannot be detected (no more silent default to port 22); dry-run still completes and plans the refuse (CI smoke images often have no sshd Port)
 - baseline: restore umask after writing `/root/USER.koncreet-password`; `write_file` forces world-readable modes for `/etc` drop-ins so a tight umask cannot leave apt/sysctl/journald config root-only
@@ -36,12 +38,10 @@
 - Baseline: `--pubkey` / `--pubkey-file`, `baseline undo`, logrotate + MOTD
 - Firewall: custom `N/tcp` / `N/udp` and `firewall_ports=` config
 - `koncreet uninstall [--purge]`
-- Menu “Run everything” only plans SSH harden when a key user exists
+- Menu "Run everything" only plans SSH harden when a key user exists
 - PR CI (tests + shellcheck) and container smoke dry-run
 - Release workflow runs tests before publishing
 
 ## 0.1.0
 
 - First tagged toolkit: baseline, firewall, fail2ban, updates, ssh
-- curl install to `/opt/koncreet` + PATH symlink
-- Compact terminal UI, config apply, self-install

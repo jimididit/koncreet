@@ -5,10 +5,10 @@
 #
 # Or pin a release:
 #   curl -fsSL https://github.com/jimididit/koncreet/releases/latest/download/install.sh | sudo bash
-#   KONCREET_VERSION=0.1.0 curl -fsSL ... | sudo bash
+#   KONCREET_VERSION=0.2.4 curl -fsSL ... | sudo bash
 #
 # Env:
-#   KONCREET_VERSION   semver (e.g. 0.1.0) or "latest" (default)
+#   KONCREET_VERSION   semver (e.g. 0.2.4) or "latest" (default)
 #   KONCREET_INSTALL_DIR  install root (default /opt/koncreet)
 set -euo pipefail
 

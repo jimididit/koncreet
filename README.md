@@ -4,6 +4,11 @@
   <img src="assets/banner.svg" alt="koncreet - first-hour server hardening" width="832" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/jimididit/koncreet/releases/latest"><img src="https://img.shields.io/github/v/release/jimididit/koncreet?label=version" alt="version" /></a>
+  <a href="https://github.com/jimididit/koncreet/actions/workflows/ci.yml"><img src="https://github.com/jimididit/koncreet/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+</p>
+
 First-hour hardening for a fresh Linux VPS. Plain Bash, change plans before it touches anything, and defaults that try not to lock you out.
 
 **Debian 12/13 and Ubuntu 22.04/24.04 only.**
@@ -16,7 +21,7 @@ sudo koncreet doctor
 sudo koncreet
 ```
 
-Pin a version with `KONCREET_VERSION=0.2.3`. Fallback if you want `main`:
+Pin a version with `KONCREET_VERSION=0.2.4`. Fallback if you want `main`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jimididit/koncreet/main/install.sh | sudo bash
