@@ -95,7 +95,7 @@ cmd_doctor() {
     doctor_warn "SSH unit=${unit} but listen port undetected (firewall apply will refuse)"
   fi
 
-  local key_user dropin=""
+  local key_user dropin="" sshd_d="/etc/ssh/sshd_config.d"
   if key_user="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
     doctor_ok "SSH harden ready: '$key_user' has keys and sudo"
   elif key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
@@ -104,28 +104,56 @@ cmd_doctor() {
     doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
   fi
 
-  # Prefer current drop-in; still notice a leftover legacy name.
-  if [[ -f /etc/ssh/sshd_config.d/00-koncreet.conf ]]; then
-    dropin="/etc/ssh/sshd_config.d/00-koncreet.conf"
-  elif [[ -f /etc/ssh/sshd_config.d/99-koncreet.conf ]]; then
-    dropin="/etc/ssh/sshd_config.d/99-koncreet.conf"
-    doctor_warn "legacy 99-koncreet.conf present - re-run: koncreet ssh apply"
-  elif [[ -f /etc/ssh/sshd_config.d/99-harden.conf ]]; then
-    dropin="/etc/ssh/sshd_config.d/99-harden.conf"
-    doctor_warn "legacy 99-harden.conf present - re-run: koncreet ssh apply"
-  fi
-  if [[ -n "$dropin" ]] && command -v sshd >/dev/null 2>&1; then
-    if ! sshd -t 2>/dev/null; then
-      doctor_fail "sshd -t failed with $(basename "$dropin") present"
-    else
-      local -a bad=()
-      mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
-      if [[ "${#bad[@]}" -gt 0 ]]; then
-        doctor_warn "SSH harden not fully in effect: ${bad[*]} (see: koncreet ssh status)"
-      else
-        doctor_ok "sshd -t ok; password auth + root login off ($(basename "$dropin"))"
+  # Some images make /etc/ssh mode 750; non-root doctor must not silently skip.
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]] && ! { [[ -r "$sshd_d" && -x "$sshd_d" ]]; }; then
+    doctor_warn "cannot read $sshd_d as $(id -un) - run: sudo koncreet doctor"
+  else
+    if [[ -f "$sshd_d/00-koncreet.conf" ]]; then
+      dropin="$sshd_d/00-koncreet.conf"
+    elif [[ -f "$sshd_d/99-koncreet.conf" ]]; then
+      dropin="$sshd_d/99-koncreet.conf"
+      doctor_warn "legacy 99-koncreet.conf present - re-run: koncreet ssh apply"
+    elif [[ -f "$sshd_d/99-harden.conf" ]]; then
+      dropin="$sshd_d/99-harden.conf"
+      doctor_warn "legacy 99-harden.conf present - re-run: koncreet ssh apply"
+    fi
+    if [[ -n "$dropin" ]]; then
+      if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        doctor_warn "SSH drop-in $(basename "$dropin") present - run: sudo koncreet doctor (to verify effective settings)"
+      elif command -v sshd >/dev/null 2>&1; then
+        if ! sshd -t 2>/dev/null; then
+          doctor_fail "sshd -t failed with $(basename "$dropin") present"
+        else
+          local -a bad=()
+          mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
+          if [[ "${#bad[@]}" -gt 0 ]]; then
+            doctor_warn "SSH harden not fully in effect: ${bad[*]} (see: koncreet ssh status)"
+          else
+            doctor_ok "sshd -t ok; password auth + root login off ($(basename "$dropin"))"
+          fi
+        fi
       fi
     fi
+  fi
+
+  # Older runs could leave koncreet /etc drop-ins root-only; point at a one-shot fix.
+  local -a private_files=() private_dirs=()
+  local f mode
+  for f in /etc/sysctl.d/99-koncreet.conf /etc/systemd/journald.conf.d/99-koncreet-cap.conf \
+    /etc/logrotate.d/koncreet /etc/fail2ban/jail.d/99-koncreet.conf \
+    /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/52unattended-upgrades-local; do
+    [[ -f "$f" ]] || continue
+    mode="$(stat -c '%a' "$f" 2>/dev/null)" || continue
+    (( 8#$mode & 8#004 )) || private_files+=("$f")
+  done
+  f=/etc/systemd/journald.conf.d
+  if [[ -d "$f" ]] && mode="$(stat -c '%a' "$f" 2>/dev/null)"; then
+    (( (8#$mode & 8#005) == 8#005 )) || private_dirs+=("$f")
+  fi
+  if [[ "${#private_files[@]}" -gt 0 || "${#private_dirs[@]}" -gt 0 ]]; then
+    doctor_warn "koncreet wrote /etc files that are not world-readable (non-root apt tools may warn)"
+    [[ "${#private_files[@]}" -gt 0 ]] && ui_muted "    sudo chmod 644 ${private_files[*]}"
+    [[ "${#private_dirs[@]}" -gt 0 ]] && ui_muted "    sudo chmod 755 ${private_dirs[*]}"
   fi
 
   # --- PATH install ---
