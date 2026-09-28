@@ -132,8 +132,12 @@ baseline_apply() {
         pass="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 24)"
         echo "${new_user}:${pass}" | chpasswd
         passfile="/root/${new_user}.koncreet-password"
+        # Tight umask only for the password file; restore so later /etc drop-ins stay world-readable.
+        local prev_umask
+        prev_umask="$(umask)"
         umask 077
         printf '%s\n' "$pass" >"$passfile"
+        umask "$prev_umask"
         chmod 600 "$passfile"
         ui_step_ok "user $new_user created"
         ui_warn "sudo password: $pass"
