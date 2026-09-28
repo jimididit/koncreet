@@ -2,6 +2,9 @@
 # koncreet - first-hour Linux server hardening kit
 # Usage: sudo ./koncreet [global-flags] <command> [args]
 set -euo pipefail
+# System config must stay world-readable (apt, sysctl, journald, fail2ban), even
+# when root's shell uses a stricter umask. Private files set their own mode.
+umask 022
 
 KONCREET_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export KONCREET_ROOT

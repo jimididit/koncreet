@@ -132,8 +132,8 @@ baseline_apply() {
         pass="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 24)"
         echo "${new_user}:${pass}" | chpasswd
         passfile="/root/${new_user}.koncreet-password"
-        umask 077
-        printf '%s\n' "$pass" >"$passfile"
+        # subshell: a bare umask 077 here made every later file root-only
+        ( umask 077; printf '%s\n' "$pass" >"$passfile" )
         chmod 600 "$passfile"
         ui_step_ok "user $new_user created"
         ui_warn "sudo password: $pass"

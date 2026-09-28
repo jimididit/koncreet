@@ -44,6 +44,13 @@ KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialHere me@laptop"
 koncreet() { bash "$ROOT/koncreet" "$@"; }
 # True if no koncreet SSH drop-in exists under any name (old or new).
 no_dropin() { ! compgen -G "$DROPIN_DIR/*koncreet*.conf" >/dev/null; }
+# Files baseline writes; must stay world-readable (non-root apt, command-not-found).
+BASELINE_FILES=(/etc/sysctl.d/99-koncreet.conf /etc/systemd/journald.conf.d/99-koncreet-cap.conf /etc/logrotate.d/koncreet)
+reset_baseline_files() {
+  rm -f "${BASELINE_FILES[@]}"
+  rmdir /etc/systemd/journald.conf.d 2>/dev/null || true
+}
+mode() { stat -c '%a' "$1" 2>/dev/null; }
 effective() { sshd -T 2>/dev/null | awk -v k="$1" '$1 == k { print $2; exit }'; }
 
 reset_ssh() {
@@ -121,16 +128,30 @@ userdel -r deploy >/dev/null 2>&1 || true
 rm -f /root/deploy.koncreet-password
 mkdir -p /root/.ssh
 echo "$KEY" >/root/.ssh/authorized_keys
+reset_baseline_files
 CONF="$(mktemp)"
 printf 'modules=baseline,ssh\nuser=deploy\nssh_harden=true\n' >"$CONF"
 out="$(koncreet --yes apply -c "$CONF" 2>&1)"
 check "plan says SKIP" grep -q -- '- SKIP SSH harden' <<<"$out"
 check "first run does not harden" no_dropin
 check "baseline created deploy with sudo" bash -c "id -nG deploy | grep -qw sudo"
+# the generated-password umask used to leak into every file written after it
+for f in "${BASELINE_FILES[@]}"; do
+  check "$(basename "$f") is 644 after user creation" [ "$(mode "$f")" = "644" ]
+done
+check "journald.conf.d is 755 after user creation" [ "$(mode /etc/systemd/journald.conf.d)" = "755" ]
+check "password file is still 600" [ "$(mode /root/deploy.koncreet-password)" = "600" ]
 out="$(koncreet --yes apply -c "$CONF" 2>&1)"
 check "second run hardens" [ -f "$DROPIN" ]
 check "second run counts SSH as a step" grep -q '\[2/2\] SSH hardening' <<<"$out"
 rm -f "$CONF"
+
+echo "== config files are world-readable even if root's umask is 077 =="
+reset_baseline_files
+bash -c "umask 077; bash '$ROOT/koncreet' --yes baseline apply" >/dev/null 2>&1
+for f in "${BASELINE_FILES[@]}"; do
+  check "$(basename "$f") is 644 under umask 077" [ "$(mode "$f")" = "644" ]
+done
 
 echo "== dry-run asks nothing, changes nothing, logs outside the tree =="
 reset_ssh
