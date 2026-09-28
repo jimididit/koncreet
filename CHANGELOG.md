@@ -3,7 +3,7 @@
 ## Unreleased
 
 - ssh: after apply, also fail closed when a `Match` block re-enables password/root/kbd-interactive auth (global `sshd -T` misses those); probe effective settings with `sshd -T -C` for root and the admin user
-- firewall: refuse to enable ufw when SSH listen ports cannot be detected (no more silent default to port 22)
+- firewall: refuse to enable ufw when SSH listen ports cannot be detected (no more silent default to port 22); dry-run still completes and plans the refuse (CI smoke images often have no sshd Port)
 - baseline: restore umask after writing `/root/USER.koncreet-password`; `write_file` forces world-readable modes for `/etc` drop-ins so a tight umask cannot leave apt/sysctl/journald config root-only
 - doctor: SSH harden readiness requires keys and sudo (same gate as `ssh apply`); checks `00-koncreet.conf` (and flags legacy `99-*`) and reports when `sshd -T` still shows password/root login on
 - doctor: as non-root, warn when `/etc/ssh/sshd_config.d` is unreadable instead of skipping; never block on a sudo password prompt when probing sudoers (`sudo -n`); suggest `chmod` if older koncreet left `/etc` drop-ins root-only

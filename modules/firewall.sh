@@ -160,6 +160,12 @@ firewall_apply() {
   local ssh_ports=()
   while read -r p; do ssh_ports+=("$p"); done < <(koncreet_ssh_listen_ports || true)
   if [[ "${#ssh_ports[@]}" -eq 0 ]]; then
+    # Dry-run should still complete (CI smoke containers often have no sshd Port/socket).
+    # Live apply must fail closed so we never enable ufw without an SSH allow rule.
+    if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
+      plan "REFUSE: could not detect SSH listen port (would not enable ufw)"
+      return 0
+    fi
     die "Could not detect SSH listen port(s). Refusing to enable ufw (would risk lockout). Set Port in sshd_config or fix ssh.socket ListenStream, then re-run."
   fi
 

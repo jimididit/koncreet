@@ -170,14 +170,23 @@ else
   echo "  FAIL: custom port dry-run"
   FAIL=$((FAIL + 1))
 fi
-# No detected SSH ports: firewall must refuse even in dry-run (do not invent 22).
+# No detected SSH ports: live apply must refuse; dry-run plans the refuse and exits 0.
 if ( KONCREET_DRY_RUN=1
      koncreet_ssh_listen_ports() { return 1; }
      firewall_apply "" 0 ) 2>/dev/null; then
-  echo "  FAIL: empty SSH ports should refuse firewall"
+  echo "  PASS: dry-run with empty SSH ports plans refuse"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: dry-run with empty SSH ports should not die"
+  FAIL=$((FAIL + 1))
+fi
+if ( KONCREET_DRY_RUN=0
+     koncreet_ssh_listen_ports() { return 1; }
+     firewall_apply "" 0 ) 2>/dev/null; then
+  echo "  FAIL: live apply with empty SSH ports should refuse"
   FAIL=$((FAIL + 1))
 else
-  echo "  PASS: empty SSH ports refuse firewall"
+  echo "  PASS: live apply with empty SSH ports refuses"
   PASS=$((PASS + 1))
 fi
 
