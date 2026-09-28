@@ -18,7 +18,7 @@
 - CI: `tests/integration.sh` runs lockout scenarios against a real sshd, sudo and ufw rule parser on Debian 12/13 and Ubuntu 22.04/24.04
 - dry-run: no longer asks the fail2ban whitelist question (shown as a `PLAN:` line instead), no longer prints the "Before you disconnect" checklist, and ends with "Dry-run done - nothing changed"
 - log: dry-run as root logs to `/var/log/koncreet.log` (tagged `dry-run`) instead of `/opt/koncreet/koncreet.log`, which `install.sh` and `uninstall` delete; non-root runs log to `~/.local/state/koncreet/`
-- Thanks @lord-helicon for reporting the doctor edge cases (unreadable `/etc/ssh`, non-blocking sudoers probe, root-only `/etc` mode hints)
+- Thanks @lord-helicon for [#2](https://github.com/jimididit/koncreet/pull/2) (SSH/sudo lockout and silent-failure fixes) and for reporting the doctor edge cases (unreadable `/etc/ssh`, non-blocking sudoers probe, root-only `/etc` mode hints)
 
 ## 0.2.3
 
