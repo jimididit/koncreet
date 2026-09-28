@@ -34,7 +34,7 @@ koncreet_user_can_sudo() {
   for g in $(id -nG "$u" 2>/dev/null); do
     [[ "$g" == "${KONCREET_SUDO_GROUP:-sudo}" || "$g" == "admin" ]] && return 0
   done
-  command -v sudo &>/dev/null && sudo -l -U "$u" 2>/dev/null | grep -q 'may run the following'
+  command -v sudo &>/dev/null && sudo -n -l -U "$u" 2>/dev/null | grep -q 'may run the following'
 }
 
 # Find a non-root user with a working SSH key. Prefer SUDO_USER, then scan /home.

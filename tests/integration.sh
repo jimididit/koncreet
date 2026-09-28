@@ -153,6 +153,34 @@ for f in "${BASELINE_FILES[@]}"; do
   check "$(basename "$f") is 644 under umask 077" [ "$(mode "$f")" = "644" ]
 done
 
+echo "== doctor uses the ssh gate and the effective sshd config =="
+reset_ssh
+koncreet --yes ssh apply >/dev/null 2>&1
+out="$(koncreet doctor 2>&1)"
+check "doctor: admin user needs keys + sudo" grep -q "admin user: deploy (keys + sudo" <<<"$out"
+check "doctor: hardening in effect" grep -q "SSH hardening in effect" <<<"$out"
+echo 'PasswordAuthentication yes' >"$DROPIN_DIR/00-aaa.conf"
+out="$(koncreet doctor 2>&1)"
+check "doctor: override reported" grep -q "SSH hardening overridden: passwordauthentication yes" <<<"$out"
+rm -f "$DROPIN_DIR/00-aaa.conf"
+mv "$DROPIN" "$DROPIN_DIR/99-koncreet.conf"
+out="$(koncreet doctor 2>&1)"
+check "doctor: legacy drop-in reported" grep -q "legacy 99-koncreet.conf" <<<"$out"
+reset_ssh
+gpasswd -d deploy sudo >/dev/null
+out="$(koncreet doctor 2>&1)"
+check "doctor: key user without sudo reported" grep -q "deploy has SSH keys but no sudo" <<<"$out"
+usermod -aG sudo deploy
+chmod 600 /etc/sysctl.d/99-koncreet.conf
+chmod 700 /etc/systemd/journald.conf.d
+out="$(koncreet doctor 2>&1)"
+check "doctor: root-only file with chmod 644 fix" grep -q "sudo chmod 644 /etc/sysctl.d/99-koncreet.conf" <<<"$out"
+check "doctor: root-only dir with chmod 755 fix" grep -q "sudo chmod 755 /etc/systemd/journald.conf.d" <<<"$out"
+chmod 644 /etc/sysctl.d/99-koncreet.conf
+chmod 755 /etc/systemd/journald.conf.d
+out="$(koncreet doctor 2>&1)"
+check "doctor: no mode warning once fixed" bash -c "! grep -q 'readable by root only' <<<\"\$1\"" _ "$out"
+
 echo "== dry-run asks nothing, changes nothing, logs outside the tree =="
 reset_ssh
 rm -f "$ROOT/koncreet.log"

@@ -12,6 +12,7 @@
 - dry-run: no longer asks the fail2ban whitelist question (shown as a `PLAN:` line instead), no longer prints the "Before you disconnect" checklist, and ends with "Dry-run done - nothing changed"
 - log: dry-run as root logs to `/var/log/koncreet.log` (tagged `dry-run`) instead of `/opt/koncreet/koncreet.log`, which `install.sh` and `uninstall` delete; non-root runs log to `~/.local/state/koncreet/`
 - baseline: creating a user ran `umask 077` in the main shell, so every file written later in the same run (sysctl, journald, logrotate, fail2ban and apt config) was root-only and new directories were `700`; non-root tools such as command-not-found then warned about unreadable apt config. The umask is now limited to the password file, and koncreet always runs with `umask 022`
+- doctor: the admin-user check now matches `ssh apply` (keys **and** sudo); the SSH check finds `00-koncreet.conf` (flags legacy `99-koncreet.conf`) and verifies effective settings with `sshd -T`; warns about root-only koncreet config and prints the `chmod` fix; never prompts for a sudo password when run as non-root
 
 ## 0.2.3
 

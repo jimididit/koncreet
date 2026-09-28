@@ -32,6 +32,60 @@ koncreet_os_is_supported() {
   return 1
 }
 
+# If SSH was hardened, check the settings sshd actually uses, not just the drop-in.
+doctor_ssh_hardening() {
+  local f dropin=""
+  for f in "$KONCREET_SSH_DROPIN" "${KONCREET_SSH_LEGACY_DROPINS[@]}"; do
+    if [[ -f "$f" ]]; then
+      dropin="$f"
+      break
+    fi
+  done
+  [[ -n "$dropin" ]] || return 0
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    doctor_warn "SSH drop-in $(basename "$dropin") present - run doctor as root to check it is in effect"
+    return 0
+  fi
+  if ! command -v sshd >/dev/null 2>&1 || ! sshd -t 2>/dev/null; then
+    doctor_fail "sshd -t failed with $(basename "$dropin") present"
+    return 0
+  fi
+  local -a bad=()
+  mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
+  if [[ "${#bad[@]}" -gt 0 ]]; then
+    doctor_warn "SSH hardening overridden: ${bad[*]} - see: koncreet ssh status"
+  elif [[ "$dropin" != "$KONCREET_SSH_DROPIN" ]]; then
+    doctor_warn "legacy $(basename "$dropin") - re-run: koncreet ssh apply"
+  else
+    doctor_ok "SSH hardening in effect (sshd -T: password auth + root login off)"
+  fi
+}
+
+# koncreet <= 0.3.0 could leave its config root-only (umask leak in baseline),
+# which makes non-root apt and command-not-found warn. Point at the fix.
+doctor_config_modes() {
+  local f m
+  local -a files=() dirs=()
+  for f in /etc/sysctl.d/99-koncreet.conf /etc/systemd/journald.conf.d/99-koncreet-cap.conf \
+    /etc/logrotate.d/koncreet /etc/fail2ban/jail.d/99-koncreet.conf \
+    /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/52unattended-upgrades-local; do
+    [[ -f "$f" ]] || continue
+    m="$(stat -c '%a' "$f" 2>/dev/null)" || continue
+    (( 8#$m & 8#004 )) || files+=("$f")
+  done
+  f=/etc/systemd/journald.conf.d
+  if [[ -d "$f" ]] && m="$(stat -c '%a' "$f" 2>/dev/null)"; then
+    (( (8#$m & 8#005) == 8#005 )) || dirs+=("$f")
+  fi
+  if [[ "${#files[@]}" -eq 0 && "${#dirs[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  doctor_warn "koncreet config readable by root only (non-root apt tools will warn). Fix:"
+  [[ "${#files[@]}" -gt 0 ]] && ui_muted "    sudo chmod 644 ${files[*]}"
+  [[ "${#dirs[@]}" -gt 0 ]] && ui_muted "    sudo chmod 755 ${dirs[*]}"
+  return 0
+}
+
 cmd_doctor() {
   KONCREET_DOCTOR_FAILS=0
   KONCREET_DOCTOR_WARNS=0
@@ -91,20 +145,18 @@ cmd_doctor() {
   ports="$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
   doctor_ok "SSH unit=${unit} ports=${ports:-22}"
 
+  # Same gate as ssh apply: keys AND sudo.
   local key_user
-  if key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
-    doctor_ok "non-root key user: $key_user (SSH harden safe)"
+  if key_user="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
+    doctor_ok "admin user: $key_user (keys + sudo, SSH harden safe)"
+  elif key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
+    doctor_warn "$key_user has SSH keys but no sudo - grant it before ssh apply: koncreet baseline apply --user $key_user"
   else
-    doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
+    doctor_warn "no non-root sudo user with authorized_keys - run baseline before ssh apply"
   fi
 
-  if [[ -f /etc/ssh/sshd_config.d/99-koncreet.conf ]]; then
-    if command -v sshd >/dev/null 2>&1 && sshd -t 2>/dev/null; then
-      doctor_ok "sshd -t ok (koncreet harden drop-in present)"
-    else
-      doctor_fail "sshd -t failed with 99-koncreet.conf present"
-    fi
-  fi
+  doctor_ssh_hardening
+  doctor_config_modes
 
   # --- PATH install ---
   local link="/usr/local/bin/koncreet" resolved want
