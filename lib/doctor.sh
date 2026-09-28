@@ -34,7 +34,14 @@ koncreet_os_is_supported() {
 
 # If SSH was hardened, check the settings sshd actually uses, not just the drop-in.
 doctor_ssh_hardening() {
-  local f dropin=""
+  local f dropin="" d
+  d="$(dirname "$KONCREET_SSH_DROPIN")"
+  # Some images make /etc/ssh unreadable for normal users; then the drop-in is
+  # invisible and the check would silently pass. Say so instead.
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]] && ! [[ -r "$d" && -x "$d" ]]; then
+    doctor_warn "cannot read $d as $(id -un) - run: sudo koncreet doctor (to check SSH hardening)"
+    return 0
+  fi
   for f in "$KONCREET_SSH_DROPIN" "${KONCREET_SSH_LEGACY_DROPINS[@]}"; do
     if [[ -f "$f" ]]; then
       dropin="$f"

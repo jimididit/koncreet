@@ -181,6 +181,21 @@ chmod 755 /etc/systemd/journald.conf.d
 out="$(koncreet doctor 2>&1)"
 check "doctor: no mode warning once fixed" bash -c "! grep -q 'readable by root only' <<<\"\$1\"" _ "$out"
 
+echo "== doctor as non-root never skips the SSH check silently =="
+reset_ssh
+koncreet --yes ssh apply >/dev/null 2>&1
+userdel -r bob >/dev/null 2>&1 || true
+useradd -m bob
+out="$(su bob -c "bash '$ROOT/koncreet' doctor" </dev/null 2>&1)"
+check "non-root: drop-in seen, asks for root" grep -q "00-koncreet.conf present - run doctor as root" <<<"$out"
+ssh_mode="$(mode /etc/ssh)"
+chmod 750 /etc/ssh
+out="$(su bob -c "bash '$ROOT/koncreet' doctor" </dev/null 2>&1)"
+chmod "$ssh_mode" /etc/ssh
+check "non-root: unreadable /etc/ssh reported" grep -q "cannot read /etc/ssh/sshd_config.d as bob - run: sudo koncreet doctor" <<<"$out"
+check "non-root: no fail from sudo prompt" bash -c "! grep -q 'password for bob' <<<\"\$1\"" _ "$out"
+userdel -r bob >/dev/null 2>&1 || true
+
 echo "== dry-run asks nothing, changes nothing, logs outside the tree =="
 reset_ssh
 rm -f "$ROOT/koncreet.log"
