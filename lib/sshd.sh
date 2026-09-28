@@ -28,42 +28,105 @@ koncreet_user_has_key() {
   koncreet_has_working_key_file "$keys"
 }
 
+# Return 0 if the user can run sudo: member of the sudo/admin group, or granted by sudoers.
+koncreet_user_can_sudo() {
+  local u="$1" g
+  for g in $(id -nG "$u" 2>/dev/null); do
+    [[ "$g" == "${KONCREET_SUDO_GROUP:-sudo}" || "$g" == "admin" ]] && return 0
+  done
+  command -v sudo &>/dev/null && sudo -l -U "$u" 2>/dev/null | grep -q 'may run the following'
+}
+
 # Find a non-root user with a working SSH key. Prefer SUDO_USER, then scan /home.
+# With "sudo" as $1, the user must also be able to run sudo.
 # Prints the username; returns 1 if none found.
 koncreet_find_nonroot_key_user() {
-  local u="${SUDO_USER:-}"
-  if [[ -n "$u" && "$u" != "root" ]] && id -u "$u" &>/dev/null; then
-    if koncreet_user_has_key "$u"; then
-      echo "$u"
-      return 0
-    fi
-  fi
-  local home user
+  local need_sudo="${1:-}"
+  local -a candidates=()
+  local home u
+  [[ -n "${SUDO_USER:-}" ]] && candidates+=("$SUDO_USER")
   for home in /home/*; do
-    [[ -d "$home" ]] || continue
-    user="$(basename "$home")"
-    [[ "$user" == "root" ]] && continue
-    id -u "$user" &>/dev/null || continue
-    if koncreet_user_has_key "$user"; then
-      echo "$user"
-      return 0
+    [[ -d "$home" ]] && candidates+=("$(basename "$home")")
+  done
+  for u in "${candidates[@]+"${candidates[@]}"}"; do
+    [[ "$u" == "root" ]] && continue
+    id -u "$u" &>/dev/null || continue
+    koncreet_user_has_key "$u" || continue
+    if [[ "$need_sudo" == "sudo" ]] && ! koncreet_user_can_sudo "$u"; then
+      continue
     fi
+    echo "$u"
+    return 0
   done
   return 1
 }
 
-# Gate for PermitRootLogin no: must have a non-root account with a live key.
+# Gate for PermitRootLogin no: must have a non-root account with a live key AND sudo,
+# otherwise disabling root login leaves nobody who can administer the box over SSH.
 koncreet_ssh_harden_gate() {
   local user
-  if user="$(koncreet_find_nonroot_key_user)"; then
-    log_info "OK: non-root user '$user' has SSH key(s) - safe to disable root login."
+  if user="$(koncreet_find_nonroot_key_user sudo)"; then
+    log_info "OK: '$user' has SSH key(s) and sudo - safe to disable root login."
     echo "$user"
     return 0
+  fi
+  if user="$(koncreet_find_nonroot_key_user)"; then
+    log_error "NOT SAFE: '$user' has SSH keys but cannot use sudo - you would lose root access."
+    log_error "Grant sudo first: koncreet baseline apply --user $user  (or: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $user)"
+    return 1
   fi
   log_error "NOT SAFE: no non-root user with a working authorized_keys found."
   log_error "Create a sudo user with an SSH key first (koncreet baseline apply --user NAME),"
   log_error "or: ssh-copy-id user@host - then re-run."
   return 1
+}
+
+# True if $1 is an IPv4/IPv6 address, optionally with a /prefix.
+koncreet_valid_ip() {
+  local ip="${1:-}" o
+  if [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})(/[0-9]{1,2})?$ ]]; then
+    for o in "${BASH_REMATCH[@]:1:4}"; do
+      (( 10#$o <= 255 )) || return 1
+    done
+    return 0
+  fi
+  [[ "$ip" == *:* && "$ip" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]]
+}
+
+# Print the IP of the SSH client that started this session; returns 1 if unknown.
+# sudo strips SSH_CONNECTION, so fall back to the environment of our ancestor
+# processes (the login shell still has it), then to who -m.
+koncreet_ssh_client_ip() {
+  local ip pid="$$" var
+  ip="${SSH_CONNECTION:-${SSH_CLIENT:-}}"
+  ip="${ip%% *}"
+  while [[ -z "$ip" && "$pid" -gt 1 && -r "/proc/$pid/status" ]]; do
+    if [[ -r "/proc/$pid/environ" ]]; then
+      var="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -m1 -E '^SSH_(CONNECTION|CLIENT)=' || true)"
+      ip="${var#*=}"
+      ip="${ip%% *}"
+    fi
+    pid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    pid="${pid:-0}"
+  done
+  if [[ -z "$ip" ]]; then
+    ip="$(who -m 2>/dev/null | sed -n 's/.*(\(.*\)).*/\1/p' || true)"
+  fi
+  koncreet_valid_ip "$ip" || return 1
+  echo "$ip"
+}
+
+# Print the port of a systemd "ListenStream=" line: 22, 0.0.0.0:22 or [::]:22.
+# Ubuntu 24.04 ships ListenStream=0.0.0.0:22, so never take the first number.
+koncreet_listenstream_port() {
+  local line="${1%%#*}"
+  if [[ "$line" =~ ^[[:space:]]*ListenStream=[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*ListenStream=.*:([0-9]+)[[:space:]]*$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
 }
 
 # Collect SSH listen ports from sshd -T, config files, and systemd socket units.
@@ -100,13 +163,8 @@ koncreet_ssh_listen_ports() {
            /etc/systemd/system/ssh.socket /etc/systemd/system/ssh.socket.d/*.conf; do
     [[ -f "$f" ]] || continue
     while read -r line; do
-      line="${line%%#*}"
-      if [[ "$line" =~ ListenStream=([0-9]+) ]]; then
-        ports["${BASH_REMATCH[1]}"]=1
-      elif [[ "$line" =~ ListenStream=\[.*\]:([0-9]+) ]]; then
-        ports["${BASH_REMATCH[1]}"]=1
-      elif [[ "$line" =~ ListenStream=.+:([0-9]+)$ ]]; then
-        ports["${BASH_REMATCH[1]}"]=1
+      if p="$(koncreet_listenstream_port "$line")"; then
+        ports["$p"]=1
       fi
     done <"$f"
   done

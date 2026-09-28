@@ -51,6 +51,15 @@ fail2ban_plan_lines() {
     "Enable and restart fail2ban; verify sshd jail is running"
 }
 
+# True if $1 is exactly one of the space-separated entries in $2.
+fail2ban_ip_listed() {
+  local ip="$1" tok
+  for tok in $2; do
+    [[ "$tok" == "$ip" ]] && return 0
+  done
+  return 1
+}
+
 fail2ban_read_ignoreip() {
   local ignoreip=""
   if [[ -f "$KONCREET_F2B_DROPIN" ]]; then
@@ -91,9 +100,11 @@ fail2ban_apply() {
 
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
-  local my_ip="${SSH_CONNECTION-}"
-  my_ip="${my_ip%% *}"
-  if [[ -n "$my_ip" ]] && ! grep -qw "$my_ip" <<<"$ignoreip"; then
+  local my_ip
+  my_ip="$(koncreet_ssh_client_ip || true)"
+  if [[ -z "$my_ip" ]]; then
+    log_warn "Could not detect your SSH client IP - whitelist it yourself: koncreet fail2ban whitelist YOUR.IP"
+  elif ! fail2ban_ip_listed "$my_ip" "$ignoreip"; then
     local add_wl=0
     if [[ "$KONCREET_YES" -eq 1 ]]; then
       add_wl=1
@@ -111,7 +122,7 @@ fail2ban_apply() {
     case "$tok" in
       127.0.0.1/8|::1|127.0.0.1) continue ;;
     esac
-    if ! grep -qw "$tok" <<<"$ignore_final"; then
+    if ! fail2ban_ip_listed "$tok" "$ignore_final"; then
       ignore_final="$ignore_final $tok"
     fi
   done
@@ -189,10 +200,11 @@ fail2ban_unban() {
 
 fail2ban_whitelist() {
   local ip="${1:?Usage: koncreet fail2ban whitelist <ip>}"
+  koncreet_valid_ip "$ip" || die "Not an IP address or CIDR: $ip"
   [[ -f "$KONCREET_F2B_DROPIN" ]] || die "No $KONCREET_F2B_DROPIN yet - run: koncreet fail2ban apply"
   local ignoreip
   ignoreip="$(fail2ban_read_ignoreip)"
-  if grep -qw "$ip" <<<"$ignoreip"; then
+  if fail2ban_ip_listed "$ip" "$ignoreip"; then
     ui_skip "$ip already whitelisted"
     return 0
   fi

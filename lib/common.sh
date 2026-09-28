@@ -30,32 +30,43 @@ _log_file() {
   }
 }
 
+# Show a message via lib/ui.sh when it is loaded, else as plain stderr.
+# (Do not silence stderr here: the ui_* helpers print to stderr.)
+_log_show() {
+  local fn="$1" tag="$2"; shift 2
+  if declare -F "$fn" >/dev/null; then
+    "$fn" "$*"
+  else
+    echo "${tag}$*" >&2
+  fi
+}
+
 koncreet_log() {
   local level="$1"; shift
   local msg="$*"
   _log_file "$level" "$msg"
   case "$level" in
-    ERROR) ui_error "$msg" 2>/dev/null || echo "[ERROR] $msg" >&2 ;;
-    WARN)  ui_warn "$msg" 2>/dev/null || echo "[WARN] $msg" >&2 ;;
+    ERROR) _log_show ui_error "[ERROR] " "$msg" ;;
+    WARN)  _log_show ui_warn "[WARN] " "$msg" ;;
     DEBUG)
-      [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$msg" 2>/dev/null || echo "[DEBUG] $msg" >&2; }
+      if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then _log_show ui_muted "[DEBUG] " "$msg"; fi
       ;;
     INFO|*)
       # Prefer quiet structured UI from callers; INFO still shows as muted · line
-      ui_info "$msg" 2>/dev/null || echo "[INFO] $msg" >&2
+      _log_show ui_info "[INFO] " "$msg"
       ;;
   esac
 }
 
-log_info()  { _log_file INFO "$*"; ui_info "$*" 2>/dev/null || echo "$*" >&2; }
-log_warn()  { _log_file WARN "$*"; ui_warn "$*" 2>/dev/null || echo "[WARN] $*" >&2; }
-log_error() { _log_file ERROR "$*"; ui_error "$*" 2>/dev/null || echo "[ERROR] $*" >&2; }
+log_info()  { _log_file INFO "$*"; _log_show ui_info "" "$*"; }
+log_warn()  { _log_file WARN "$*"; _log_show ui_warn "[WARN] " "$*"; }
+log_error() { _log_file ERROR "$*"; _log_show ui_error "[ERROR] " "$*"; }
 log_debug() {
   _log_file DEBUG "$*"
-  [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]] && { ui_muted "$*" 2>/dev/null || true; }
+  if [[ "${KONCREET_VERBOSE:-0}" -eq 1 ]]; then _log_show ui_muted "" "$*"; fi
 }
 # Success line that also hits the log
-log_ok() { _log_file INFO "$*"; ui_success "$*" 2>/dev/null || echo "[OK] $*" >&2; }
+log_ok() { _log_file INFO "$*"; _log_show ui_success "[OK] " "$*"; }
 
 die() {
   log_error "$*"
@@ -106,7 +117,7 @@ confirm() {
 
 plan() {
   _log_file INFO "PLAN: $*"
-  ui_muted "PLAN: $*" 2>/dev/null || echo "PLAN: $*" >&2
+  _log_show ui_muted "" "PLAN: $*"
 }
 
 run_cmd() {

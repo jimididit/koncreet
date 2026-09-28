@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- ssh: drop-in renamed to `00-koncreet.conf` so it wins over `50-cloud-init.conf` (sshd keeps the first value); `ssh apply` verifies effective settings with `sshd -T` and rolls back on override; `ssh status` shows effective values. Legacy `99-koncreet.conf` is migrated.
+- ssh: hardening gate now requires the key user to have sudo, and asks you to confirm a koncreet-generated sudo password was saved before root login is disabled
+- fail2ban: detect your SSH client IP under `sudo` (walks parent process environment, then `who -m`); warn when it can't; `whitelist` validates the IP
+- firewall: parse Ubuntu 24.04 `ListenStream=0.0.0.0:22` as port 22 (was 0, which made `ufw allow` fail)
+- Error/warning/info messages (including every `die`) were silently dropped from the terminal; they now print
+
 ## 0.2.3
 
 - fail2ban: tolerate unset SSH_CONNECTION under `set -u` (CI dry-run / non-SSH shells)

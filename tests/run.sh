@@ -124,6 +124,13 @@ ports="$(
 ports="${ports%" "}"
 assert_eq "$ports" "2222" "fixture Port 2222"
 
+echo "== ssh.socket ListenStream parse =="
+assert_eq "$(koncreet_listenstream_port 'ListenStream=22')" "22" "bare port"
+assert_eq "$(koncreet_listenstream_port 'ListenStream=0.0.0.0:22')" "22" "ubuntu 24.04 ipv4 form (not 0)"
+assert_eq "$(koncreet_listenstream_port 'ListenStream=[::]:2222')" "2222" "ipv6 form"
+assert_fail "empty reset line" koncreet_listenstream_port 'ListenStream='
+assert_fail "commented out" koncreet_listenstream_port '#ListenStream=22'
+
 echo "== firewall sensitive gate =="
 # shellcheck source=/dev/null
 source "$ROOT/modules/firewall.sh"
@@ -212,6 +219,41 @@ ui_run_quiet "false" false >/dev/null 2>&1
 rc=$?
 set -e
 assert_eq "$rc" "1" "ui_run_quiet preserves failure exit"
+
+echo "== sshd effective-config check =="
+# shellcheck source=/dev/null
+source "$ROOT/modules/ssh.sh"
+good=$'port 22\npasswordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no'
+assert_eq "$(koncreet_sshd_mismatches <<<"$good")" "" "all required settings effective"
+overridden="${good/passwordauthentication no/passwordauthentication yes}"
+got="$(koncreet_sshd_mismatches <<<"$overridden")"
+assert_eq "$got" "passwordauthentication yes (want no)" "cloud-init style override detected"
+assert_eq "$(koncreet_sshd_mismatches </dev/null | wc -l | tr -d ' ')" "3" "no sshd -T output fails closed"
+assert_eq "$(basename "$KONCREET_SSH_DROPIN")" "00-koncreet.conf" "drop-in sorts before 50-cloud-init.conf"
+
+echo "== sudo gate =="
+assert_ok "sudo group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'deploy sudo'; }; koncreet_user_can_sudo deploy"
+assert_ok "admin group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'ubuntu adm admin'; }; koncreet_user_can_sudo ubuntu"
+assert_ok "sudoers grant" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'ops ops'; }; sudo() { echo 'User ops may run the following commands on h:'; }; koncreet_user_can_sudo ops"
+assert_fail "no sudo" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'git git'; }; sudo() { echo 'User git is not allowed to run sudo on h.'; }; koncreet_user_can_sudo git"
+
+echo "== client IP detection =="
+assert_ok "valid ipv4" koncreet_valid_ip 203.0.113.5
+assert_ok "valid ipv4 cidr" koncreet_valid_ip 10.0.0.0/8
+assert_ok "valid ipv6" koncreet_valid_ip 2001:db8::1
+assert_fail "octet > 255" koncreet_valid_ip 203.0.113.256
+assert_fail "hostname" koncreet_valid_ip example.com
+assert_fail "sed metachar" koncreet_valid_ip '1.2.3.4|x'
+assert_fail "empty" koncreet_valid_ip ""
+assert_eq "$(SSH_CONNECTION='203.0.113.5 51234 10.0.0.2 22' koncreet_ssh_client_ip)" "203.0.113.5" "ip from SSH_CONNECTION"
+assert_eq "$(SSH_CONNECTION='' SSH_CLIENT='2001:db8::7 51234 22' koncreet_ssh_client_ip)" "2001:db8::7" "ip from SSH_CLIENT"
+
+echo "== fail2ban ignoreip matching =="
+# shellcheck source=/dev/null
+source "$ROOT/modules/fail2ban.sh"
+assert_ok "exact entry listed" fail2ban_ip_listed 1.2.3.4 "127.0.0.1/8 ::1 1.2.3.4"
+assert_fail "prefix of another entry" fail2ban_ip_listed 1.2.3.4 "127.0.0.1/8 1.2.3.45"
+assert_fail "dots are not wildcards" fail2ban_ip_listed 1.2.3.4 "1x2x3x4"
 
 echo
 echo "Results: $PASS passed, $FAIL failed"
