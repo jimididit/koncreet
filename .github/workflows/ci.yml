@@ -41,3 +41,26 @@ jobs:
 
       - name: Smoke dry-run
         run: bash tests/smoke-dry-run.sh
+
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04"]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Deps
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq bash ca-certificates openssl openssh-server sudo ufw
+
+      - name: Integration (real sshd/sudo/ufw parser, stubbed systemd)
+        env:
+          KONCREET_INTEGRATION_OK: "1"
+        run: bash tests/integration.sh

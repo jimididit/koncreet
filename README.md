@@ -87,6 +87,8 @@ See [`share/koncreet.conf.example`](share/koncreet.conf.example) (`pubkey`, `pub
 ```bash
 bash tests/run.sh
 bash tests/smoke-dry-run.sh
+# real sshd/sudo/ufw scenarios - rewrites /etc/ssh, so only in a throwaway container:
+docker run --rm -v "$PWD":/k -w /k -e KONCREET_INTEGRATION_OK=1 ubuntu:24.04 bash tests/integration.sh
 shellcheck koncreet install.sh lib/*.sh modules/*.sh
 ```
 

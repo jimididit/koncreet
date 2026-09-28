@@ -8,6 +8,7 @@
 - firewall: parse Ubuntu 24.04 `ListenStream=0.0.0.0:22` as port 22 (was 0, which made `ufw allow` fail)
 - Error/warning/info messages (including every `die`) were silently dropped from the terminal; they now print
 - apply: SSH hardening is decided once before the run, so a plan that says "SKIP SSH harden" no longer hardens SSH after `baseline` creates the user in the same run
+- CI: `tests/integration.sh` runs lockout scenarios against a real sshd, sudo and ufw rule parser on Debian 12/13 and Ubuntu 22.04/24.04
 
 ## 0.2.3
 
