@@ -237,6 +237,30 @@ assert_eq "$got" "passwordauthentication yes (want no)" "cloud-init style overri
 assert_eq "$(koncreet_sshd_mismatches </dev/null | wc -l | tr -d ' ')" "3" "no sshd -T output fails closed"
 assert_eq "$(basename "$KONCREET_SSH_DROPIN")" "00-koncreet.conf" "drop-in sorts before 50-cloud-init.conf"
 
+# Match-block scanner rules (mirrors ssh_match_auth_overrides)
+match_tmp="$(mktemp)"
+printf '%s\n' 'Match User root' '    PermitRootLogin yes' >"$match_tmp"
+got="$(awk '
+  BEGIN { in_match = 0 }
+  {
+    k = tolower($1); v = tolower($2)
+    if (k == "match") { in_match = 1; next }
+    if (!in_match) next
+    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
+  }' "$match_tmp")"
+assert_ok "Match PermitRootLogin yes is flagged" grep -q 'permitrootlogin yes' <<<"${got,,}"
+printf '%s\n' 'PasswordAuthentication no' 'PermitRootLogin no' >"$match_tmp"
+got="$(awk '
+  BEGIN { in_match = 0 }
+  {
+    k = tolower($1); v = tolower($2)
+    if (k == "match") { in_match = 1; next }
+    if (!in_match) next
+    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
+  }' "$match_tmp")"
+assert_eq "$got" "" "global-only lines are ignored by Match scanner"
+rm -f "$match_tmp"
+
 echo "== sudo gate =="
 assert_ok "sudo group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'deploy sudo'; }; koncreet_user_can_sudo deploy"
 assert_ok "admin group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'ubuntu adm admin'; }; koncreet_user_can_sudo ubuntu"

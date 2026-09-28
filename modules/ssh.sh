@@ -23,7 +23,7 @@ ssh_plan_lines() {
   printf '%s\n' \
     "Require non-root sudo user with authorized_keys before disabling root login" \
     "Write $KONCREET_SSH_DROPIN (PasswordAuthentication no, PermitRootLogin no, extras)" \
-    "sshd -t, verify effective settings with sshd -T, then reload SSH unit"
+    "sshd -t, verify effective settings with sshd -T (global + Match criteria), then reload SSH unit"
 }
 
 # Read "sshd -T" output on stdin; print each required setting whose effective value differs.
@@ -34,6 +34,31 @@ koncreet_sshd_mismatches() {
     key="${want%% *}"
     got="$(awk -v k="$key" '$1 == k { print $2; exit }' <<<"$out")"
     [[ "$got" == "${want#* }" ]] || echo "$key ${got:-unset} (want ${want#* })"
+  done
+}
+
+# Match blocks can re-enable auth settings that a global "sshd -T" still reports as no.
+# Print Match headers + lines that set a required keyword to something other than no.
+ssh_match_auth_overrides() {
+  local f
+  for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+    [[ -f "$f" ]] || continue
+    awk -v f="$f" '
+      BEGIN { in_match = 0 }
+      {
+        k = tolower($1); v = tolower($2)
+        if (k == "match") {
+          in_match = 1
+          hdr = $0
+          hl = FNR
+          next
+        }
+        if (!in_match) next
+        if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") {
+          print f ":" hl ":" hdr
+          print f ":" FNR ":" $0
+        }
+      }' "$f"
   done
 }
 
@@ -49,6 +74,21 @@ ssh_conflicting_lines() {
         print f ":" FNR ":" $0
       }' "$f"
   done
+}
+
+# Run sshd -T (optionally with -C criteria). Print mismatches; return 1 if any.
+ssh_collect_mismatches() {
+  local label="$1"
+  shift
+  local -a bad=()
+  local m
+  mapfile -t bad < <(sshd -T "$@" 2>/dev/null | koncreet_sshd_mismatches)
+  if [[ "${#bad[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  log_error "  [$label]"
+  for m in "${bad[@]}"; do log_error "    effective: $m"; done
+  return 1
 }
 
 # Put the drop-in back the way it was before this apply.
@@ -130,18 +170,29 @@ EOF
   fi
   ui_step_ok "sshd config valid"
 
-  local -a bad=()
-  mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
-  if [[ "${#bad[@]}" -gt 0 ]]; then
-    ui_step_fail "other sshd config overrides koncreet - rolling back"
-    local m line
-    for m in "${bad[@]}"; do log_error "  effective: $m"; done
-    log_error "sshd uses the first value it reads. Lines that may be winning:"
+  local failed=0 line
+  ssh_collect_mismatches "global" || failed=1
+  # Global sshd -T ignores Match. Probe root and the admin user so a Match User
+  # block cannot quietly re-enable password auth or root login.
+  ssh_collect_mismatches "Match criteria user=root" -C "user=root,host=localhost,addr=127.0.0.1" || failed=1
+  ssh_collect_mismatches "Match criteria user=${safe_user}" -C "user=${safe_user},host=localhost,addr=127.0.0.1" || failed=1
+
+  local -a match_hits=()
+  mapfile -t match_hits < <(ssh_match_auth_overrides)
+  if [[ "${#match_hits[@]}" -gt 0 ]]; then
+    failed=1
+    log_error "  [Match block re-enables a required setting]"
+    for line in "${match_hits[@]}"; do log_error "    $line"; done
+  fi
+
+  if [[ "$failed" -ne 0 ]]; then
+    ui_step_fail "sshd effective config still allows password/root login - rolling back"
+    log_error "sshd keeps the first global value, but Match can override per connection. Review:"
     while IFS= read -r line; do log_error "  $line"; done < <(ssh_conflicting_lines)
     ssh_rollback_dropin "$had_prev"
     die "Fix or remove those lines, then re-run: koncreet ssh apply"
   fi
-  ui_step_ok "effective: password auth, keyboard-interactive, root login off"
+  ui_step_ok "effective: password auth, keyboard-interactive, root login off (global + Match probes)"
 
   local f
   for f in "${KONCREET_SSH_LEGACY_DROPINS[@]}"; do
