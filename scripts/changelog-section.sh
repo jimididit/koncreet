@@ -13,6 +13,9 @@ section="$(awk -v ver="$VER" '
   found { print }
 ' "$CHANGELOG")"
 
+# Drop a leading blank line left after the ## heading
+section="$(printf '%s\n' "$section" | sed -e '/./,$!d')"
+
 # Fail if the section is missing or only whitespace
 if [[ -z "${section//[[:space:]]/}" ]]; then
   echo "no CHANGELOG section for ${VER}" >&2
