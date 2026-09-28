@@ -88,8 +88,12 @@ cmd_doctor() {
   # --- SSH ---
   local unit ports
   unit="$(koncreet_ssh_unit 2>/dev/null || echo ssh)"
-  ports="$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
-  doctor_ok "SSH unit=${unit} ports=${ports:-22}"
+  ports="$(koncreet_ssh_listen_ports 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true)"
+  if [[ -n "$ports" ]]; then
+    doctor_ok "SSH unit=${unit} ports=${ports}"
+  else
+    doctor_warn "SSH unit=${unit} but listen port undetected (firewall apply will refuse)"
+  fi
 
   local key_user
   if key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then

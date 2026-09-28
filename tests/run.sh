@@ -130,6 +130,8 @@ assert_eq "$(koncreet_listenstream_port 'ListenStream=0.0.0.0:22')" "22" "ubuntu
 assert_eq "$(koncreet_listenstream_port 'ListenStream=[::]:2222')" "2222" "ipv6 form"
 assert_fail "empty reset line" koncreet_listenstream_port 'ListenStream='
 assert_fail "commented out" koncreet_listenstream_port '#ListenStream=22'
+# Contract: when no ports are found, koncreet_ssh_listen_ports returns 1 and prints
+# nothing (firewall apply refuses). Defaulting to 22 was removed on purpose.
 
 echo "== firewall sensitive gate =="
 # shellcheck source=/dev/null
@@ -159,12 +161,24 @@ else
   echo "  PASS: bare port aborts"
   PASS=$((PASS + 1))
 fi
-if ( KONCREET_DRY_RUN=1 firewall_apply "8080/tcp" 0 ) 2>/dev/null; then
+if ( KONCREET_DRY_RUN=1
+     koncreet_ssh_listen_ports() { echo 22; }
+     firewall_apply "8080/tcp" 0 ) 2>/dev/null; then
   echo "  PASS: custom port dry-run"
   PASS=$((PASS + 1))
 else
   echo "  FAIL: custom port dry-run"
   FAIL=$((FAIL + 1))
+fi
+# No detected SSH ports: firewall must refuse even in dry-run (do not invent 22).
+if ( KONCREET_DRY_RUN=1
+     koncreet_ssh_listen_ports() { return 1; }
+     firewall_apply "" 0 ) 2>/dev/null; then
+  echo "  FAIL: empty SSH ports should refuse firewall"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: empty SSH ports refuse firewall"
+  PASS=$((PASS + 1))
 fi
 
 echo "== config pubkey / firewall_ports =="

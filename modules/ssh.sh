@@ -260,7 +260,9 @@ ssh_status() {
   [[ "$legacy" -eq 1 ]] && ui_muted "  re-run: koncreet ssh apply  (moves to $(basename "$KONCREET_SSH_DROPIN"))"
 
   ui_kv "unit" "$(koncreet_ssh_unit)"
-  ui_kv "ports" "$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
+  local ports
+  ports="$(koncreet_ssh_listen_ports 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true)"
+  ui_kv "ports" "${ports:-undetected}"
   local u
   if u="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
     ui_kv "admin user" "$u (keys + sudo)"

@@ -130,7 +130,8 @@ koncreet_listenstream_port() {
 }
 
 # Collect SSH listen ports from sshd -T, config files, and systemd socket units.
-# Prints unique port numbers, one per line. Defaults to 22 if none found.
+# Prints unique port numbers, one per line. Returns 1 (no output) if none found;
+# callers that open the firewall must not invent port 22.
 koncreet_ssh_listen_ports() {
   local -A ports=()
   local p line
@@ -170,8 +171,7 @@ koncreet_ssh_listen_ports() {
   done
 
   if [[ "${#ports[@]}" -eq 0 ]]; then
-    echo 22
-    return 0
+    return 1
   fi
   for p in "${!ports[@]}"; do
     echo "$p"

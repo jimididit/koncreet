@@ -3,6 +3,7 @@
 ## Unreleased
 
 - ssh: after apply, also fail closed when a `Match` block re-enables password/root/kbd-interactive auth (global `sshd -T` misses those); probe effective settings with `sshd -T -C` for root and the admin user
+- firewall: refuse to enable ufw when SSH listen ports cannot be detected (no more silent default to port 22)
 - ssh: drop-in renamed to `00-koncreet.conf` so it wins over `50-cloud-init.conf` (sshd keeps the first value); `ssh apply` verifies effective settings with `sshd -T` and rolls back on override; `ssh status` shows effective values. Legacy `99-koncreet.conf` is migrated.
 - ssh: hardening gate now requires the key user to have sudo, and asks you to confirm a koncreet-generated sudo password was saved before root login is disabled
 - fail2ban: detect your SSH client IP under `sudo` (walks parent process environment, then `who -m`); warn when it can't; `whitelist` validates the IP

@@ -51,10 +51,14 @@ firewall_plan_lines() {
   local public="${2:-0}"
   local extra_ports="${3:-}"
   local lines=("Install ufw if needed" "Default deny incoming / allow outgoing")
-  local p
+  local p found=0
   while read -r p; do
+    found=1
     lines+=("Allow SSH on ${p}/tcp")
-  done < <(koncreet_ssh_listen_ports)
+  done < <(koncreet_ssh_listen_ports || true)
+  if [[ "$found" -eq 0 ]]; then
+    lines+=("REFUSE: could not detect SSH listen port (will not enable ufw)")
+  fi
   if [[ -n "$requested" ]]; then
     lines+=("Open services: $requested (public=$public)")
   fi
@@ -154,7 +158,10 @@ firewall_apply() {
   firewall_snapshot
 
   local ssh_ports=()
-  while read -r p; do ssh_ports+=("$p"); done < <(koncreet_ssh_listen_ports)
+  while read -r p; do ssh_ports+=("$p"); done < <(koncreet_ssh_listen_ports || true)
+  if [[ "${#ssh_ports[@]}" -eq 0 ]]; then
+    die "Could not detect SSH listen port(s). Refusing to enable ufw (would risk lockout). Set Port in sshd_config or fix ssh.socket ListenStream, then re-run."
+  fi
 
   if [[ "$KONCREET_DRY_RUN" -eq 1 ]]; then
     plan "ufw default deny incoming / allow outgoing"
@@ -202,5 +209,7 @@ firewall_status() {
   else
     ui_kv "ufw" "not installed"
   fi
-  ui_kv "ssh ports" "$(koncreet_ssh_listen_ports | tr '\n' ' ' | sed 's/ $//')"
+  local ports
+  ports="$(koncreet_ssh_listen_ports 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true)"
+  ui_kv "ssh ports" "${ports:-undetected}"
 }
