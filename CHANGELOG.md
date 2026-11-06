@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.5
+
 - doctor: always checks the effective SSH settings with `sshd -T` when run as root, not only when a koncreet drop-in exists; with no drop-in and password/root login still on it warns with the live values and points to `sudo koncreet ssh apply` (so it no longer ends with "all clear"), and with no drop-in but everything already off it says so; Match blocks that re-enable password/root login are reported too
 - doctor: the admin-user line now reads "ready for ssh apply" instead of "SSH harden ready", which looked like SSH was already hardened; as non-root it says SSH was not checked and points to `sudo koncreet doctor` (never calls sudo)
 - ssh status: reports the same facts as doctor (not applied with the effective values, or already off without a koncreet drop-in, plus Match overrides)
