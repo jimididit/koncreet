@@ -61,7 +61,7 @@ sudo koncreet --dry-run apply -c ./koncreet.conf
 sudo koncreet apply -c ./koncreet.conf --yes
 ```
 
-SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`. Until you do, the run ends with `Done - 1 module skipped (ssh)`, the skip is in the log, and `sudo koncreet doctor` warns that password/root login are still on.
+SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`. Until you do, the run ends with `Done - 1 module skipped (ssh)`, the skip is in the log, and `sudo koncreet doctor` warns that password/root login are still on. While that user still has the password koncreet generated, `ssh apply` only runs through `sudo` as that user (proving the key login, sudo and the password together) and never prints the password; from a root session it refuses, even with `--yes`.
 
 Flags: `-n` dry-run, `-y` assume yes, `-c` config, `-v` verbose, `-V` version.
 
@@ -77,7 +77,9 @@ Keep the session you hardened from open. Test a **new** SSH login before you dis
 | Locked out by ufw | Console: `sudo ufw disable` |
 | Banned by fail2ban | `sudo koncreet fail2ban unban YOUR.IP` |
 | Undo baseline drop-ins | `sudo koncreet baseline undo` (keeps users/swap/timezone) |
-| Need the new user password | `cat /root/USER.koncreet-password` (as root - save it before `ssh apply`) |
+| Need the new user password | `cat /root/USER.koncreet-password` from the root session (removed after `sudo koncreet ssh apply` succeeds) |
+| `ssh apply` refuses from root | Log in as the new user, `sudo -v`, then `sudo koncreet ssh apply` (or set your own: `passwd USER`) |
+| Locked password blocks `ssh apply` | `passwd USER`, then re-run |
 | Forced password change fails | `chage -d $(date -I) USER` then reconnect with your key |
 | Too many authentication failures | `ssh -o IdentitiesOnly=yes -i ~/.ssh/your_key user@host` |
 

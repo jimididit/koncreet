@@ -210,8 +210,8 @@ ui_post_apply_checklist() {
   fi
   _ui_step "sudo koncreet status"
   _ui_step "If locked out: sudo koncreet ssh undo | sudo ufw disable | sudo koncreet fail2ban unban YOUR.IP"
-  if [[ -n "$user" && -f "/root/${user}.koncreet-password" ]]; then
-    _ui_step "New user password: cat /root/${user}.koncreet-password"
+  if [[ -n "$user" && -f "$(koncreet_passfile "$user")" ]]; then
+    _ui_step "New user password: cat $(koncreet_passfile "$user")"
   fi
   unset -f _ui_step
   printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2

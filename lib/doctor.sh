@@ -150,9 +150,17 @@ cmd_doctor() {
 
   local key_user
   if key_user="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
-    doctor_ok "ready for ssh apply: '$key_user' has keys and sudo"
+    if ssh_sudo_unproven "$key_user" >/dev/null; then
+      doctor_ok "ready for ssh apply as '$key_user': log in as $key_user, then run: sudo koncreet ssh apply"
+    else
+      doctor_ok "ready for ssh apply: '$key_user' has keys and sudo"
+    fi
   elif key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
-    doctor_warn "'$key_user' has SSH keys but no sudo - ssh apply will refuse until: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $key_user"
+    if koncreet_user_has_sudo_rights "$key_user" && koncreet_sudo_password_unusable "$key_user"; then
+      doctor_warn "'$key_user' has SSH keys and sudo rights but its password is locked or unset - ssh apply will refuse until: passwd $key_user"
+    else
+      doctor_warn "'$key_user' has SSH keys but no sudo - ssh apply will refuse until: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $key_user"
+    fi
   else
     doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
   fi
