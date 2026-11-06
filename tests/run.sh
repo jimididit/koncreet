@@ -260,29 +260,42 @@ assert_eq "$got" "passwordauthentication yes (want no)" "cloud-init style overri
 assert_eq "$(koncreet_sshd_mismatches </dev/null | wc -l | tr -d ' ')" "3" "no sshd -T output fails closed"
 assert_eq "$(basename "$KONCREET_SSH_DROPIN")" "00-koncreet.conf" "drop-in sorts before 50-cloud-init.conf"
 
-# Match-block scanner rules (mirrors ssh_match_auth_overrides)
+two_on=$'port 22\npasswordauthentication yes\npermitrootlogin yes\nkbdinteractiveauthentication no'
+assert_eq "$(koncreet_sshd_mismatch_summary <<<"$two_on")" "passwordauthentication yes, permitrootlogin yes" "mismatch summary"
+assert_eq "$(koncreet_sshd_mismatch_summary <<<"$good")" "" "mismatch summary empty when hardened"
+
+echo "== Match override scan =="
+MFIX="$ROOT/tests/fixtures/sshd_match_overrides.conf"
+got="$(ssh_match_auth_overrides "$MFIX")"
+assert_ok "Match Address block is flagged" grep -q ':7:    PasswordAuthentication yes' <<<"$got"
+assert_ok "Match Address header is shown" grep -q ':6:Match Address 203.0.113.0/24' <<<"$got"
+assert_ok "lowercase 'match all' with Keyword=value is flagged" grep -q ':10:  permitrootlogin=Yes' <<<"$got"
+assert_ok "MATCH + tab + ChallengeResponseAuthentication alias is flagged" grep -q ':13:.ChallengeResponseAuthentication yes' <<<"$got"
+assert_fail "block that keeps 'no' is not flagged" grep -q 'Match User safe' <<<"$got"
+assert_fail "global lines are not flagged" grep -qE ':(2|3):' <<<"$got"
 match_tmp="$(mktemp)"
-printf '%s\n' 'Match User root' '    PermitRootLogin yes' >"$match_tmp"
-got="$(awk '
-  BEGIN { in_match = 0 }
-  {
-    k = tolower($1); v = tolower($2)
-    if (k == "match") { in_match = 1; next }
-    if (!in_match) next
-    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
-  }' "$match_tmp")"
-assert_ok "Match PermitRootLogin yes is flagged" grep -q 'permitrootlogin yes' <<<"${got,,}"
-printf '%s\n' 'PasswordAuthentication no' 'PermitRootLogin no' >"$match_tmp"
-got="$(awk '
-  BEGIN { in_match = 0 }
-  {
-    k = tolower($1); v = tolower($2)
-    if (k == "match") { in_match = 1; next }
-    if (!in_match) next
-    if ((k == "passwordauthentication" || k == "permitrootlogin" || k == "kbdinteractiveauthentication") && v != "no") print
-  }' "$match_tmp")"
-assert_eq "$got" "" "global-only lines are ignored by Match scanner"
+printf '%s\n' 'PasswordAuthentication yes' 'PermitRootLogin no' >"$match_tmp"
+assert_eq "$(ssh_match_auth_overrides "$match_tmp")" "" "file without Match has no overrides"
 rm -f "$match_tmp"
+
+echo "== sshd Include following =="
+inc="$(mktemp -d)"
+mkdir -p "$inc/sshd_config.d" "$inc/extra" "$inc/rel.d"
+printf '%s\n' "Include $inc/sshd_config.d/*.conf" "include $inc/extra/*.conf" 'Include rel.d/*.conf' >"$inc/sshd_config"
+echo 'Port 22' >"$inc/sshd_config.d/a.conf"
+echo 'Port 2200' >"$inc/extra/b.conf"
+printf '%s\n' 'Include nested.conf' >"$inc/rel.d/c.conf"
+printf '%s\n' 'Match all' '  PasswordAuthentication yes' >"$inc/nested.conf"
+files="$(KONCREET_SSHD_CONFIG="$inc/sshd_config" koncreet_sshd_config_files)"
+assert_ok "main file listed" grep -qx "$inc/sshd_config" <<<"$files"
+assert_ok "stock drop-in listed" grep -qx "$inc/sshd_config.d/a.conf" <<<"$files"
+assert_ok "absolute Include listed" grep -qx "$inc/extra/b.conf" <<<"$files"
+assert_ok "relative Include listed" grep -qx "$inc/rel.d/c.conf" <<<"$files"
+assert_ok "nested Include listed" grep -qx "$inc/nested.conf" <<<"$files"
+assert_eq "$(sort <<<"$files" | uniq -d)" "" "no file listed twice"
+got="$(KONCREET_SSHD_CONFIG="$inc/sshd_config" ssh_match_auth_overrides)"
+assert_ok "Match in a nested Include is flagged" grep -q "nested.conf:2:  PasswordAuthentication yes" <<<"$got"
+rm -rf "$inc"
 
 echo "== sudo gate =="
 assert_ok "sudo group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'deploy sudo'; }; koncreet_user_can_sudo deploy"
@@ -307,6 +320,132 @@ source "$ROOT/modules/fail2ban.sh"
 assert_ok "exact entry listed" fail2ban_ip_listed 1.2.3.4 "127.0.0.1/8 ::1 1.2.3.4"
 assert_fail "prefix of another entry" fail2ban_ip_listed 1.2.3.4 "127.0.0.1/8 1.2.3.45"
 assert_fail "dots are not wildcards" fail2ban_ip_listed 1.2.3.4 "1x2x3x4"
+
+echo "== doctor / ssh status: effective SSH state =="
+# shellcheck source=/dev/null
+source "$ROOT/lib/doctor.sh"
+SSHD_T_ON=$'port 22\npasswordauthentication yes\npermitrootlogin yes\nkbdinteractiveauthentication no'
+SSHD_T_OFF=$'port 22\npasswordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no'
+# ssh_state_case FUNC SSHD_T_OUTPUT ROOT(0/1) [drop-in file names...]
+# Runs doctor_ssh_hardening or ssh_status against a fake sshd and a temp sshd_config.d.
+ssh_state_case() {
+  local fn="$1" sshd_t="$2" as_root="$3"
+  shift 3
+  (
+    d="$(mktemp -d)"
+    mkdir -p "$d/sshd_config.d"
+    : >"$d/sshd_config"
+    for f in "$@"; do echo "PasswordAuthentication no" >"$d/sshd_config.d/$f"; done
+    KONCREET_SSHD_CONFIG="$d/sshd_config"
+    KONCREET_SSH_DROPIN="$d/sshd_config.d/00-koncreet.conf"
+    KONCREET_SSH_LEGACY_DROPINS=("$d/sshd_config.d/99-koncreet.conf" "$d/sshd_config.d/99-harden.conf")
+    koncreet_is_root() { [[ "$as_root" -eq 1 ]]; }
+    sshd() { [[ "$1" == "-T" ]] && printf '%s\n' "$sshd_t"; return 0; }
+    sudo() { echo "SUDO WAS CALLED"; return 1; }
+    koncreet_find_nonroot_key_user() { echo newadmin; }
+    koncreet_ssh_listen_ports() { echo 22; }
+    koncreet_ssh_unit() { echo ssh.service; }
+    KONCREET_DOCTOR_WARNS=0
+    "$fn"
+    echo "WARNS=$KONCREET_DOCTOR_WARNS"
+    rm -rf "$d"
+  ) 2>&1
+}
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_ON" 1)"
+assert_ok "doctor: no drop-in + password/root on warns with effective values" \
+  grep -q 'SSH hardening not applied: passwordauthentication yes, permitrootlogin yes - run: sudo koncreet ssh apply' <<<"$out"
+assert_fail "doctor: no drop-in + on is not all clear (warn counted)" grep -q '^WARNS=0$' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_OFF" 1)"
+assert_ok "doctor: no drop-in + all off is OK" grep -q 'already off (no koncreet drop-in)' <<<"$out"
+assert_ok "doctor: no drop-in + all off adds no warning" grep -q '^WARNS=0$' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_OFF" 1 00-koncreet.conf)"
+assert_ok "doctor: drop-in + all off is OK" grep -q 'password auth + root login off (00-koncreet.conf)' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_ON" 1 00-koncreet.conf)"
+assert_ok "doctor: drop-in + overridden warns" grep -q 'SSH harden not fully in effect: passwordauthentication yes' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_OFF" 1 99-hardening.conf)"
+assert_ok "doctor: hand-made 99-hardening.conf is not called a koncreet drop-in" grep -q 'already off (no koncreet drop-in)' <<<"$out"
+assert_fail "doctor: hand-made 99-hardening.conf is not called legacy" grep -q 'legacy' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_ON" 0)"
+assert_ok "doctor as non-root points at sudo koncreet doctor" grep -q 'SSH hardening not checked as .* - run: sudo koncreet doctor' <<<"$out"
+assert_fail "doctor as non-root never calls sudo" grep -q 'SUDO WAS CALLED' <<<"$out"
+out="$(ssh_state_case ssh_status "$SSHD_T_ON" 1)"
+assert_ok "status agrees: not applied + same values" \
+  grep -q 'SSH hardening not applied: passwordauthentication yes, permitrootlogin yes - run: sudo koncreet ssh apply' <<<"$out"
+out="$(ssh_state_case ssh_status "$SSHD_T_OFF" 1 00-koncreet.conf)"
+assert_ok "status agrees: drop-in shown" grep -q 'harden *00-koncreet.conf' <<<"$out"
+assert_fail "status agrees: no warning when hardened" grep -q '\[WARN\]' <<<"$out"
+out="$(ssh_state_case doctor_ssh_hardening "$SSHD_T_ON" 1 99-koncreet.conf)"
+assert_ok "doctor: legacy drop-in still named" grep -q 'legacy 99-koncreet.conf present' <<<"$out"
+
+echo "== SSH skip is logged and reminded =="
+skip_log="$(mktemp)"
+( koncreet_log_path() { echo "$skip_log"; }; ssh_note_skipped ) >/dev/null 2>&1
+assert_ok "skip reason goes to the log" grep -q '\[WARN\] SKIP SSH harden - no non-root sudo user' "$skip_log"
+rm -f "$skip_log"
+out="$(KONCREET_DRY_RUN=0 ui_post_apply_checklist newadmin 1 2>&1)"
+assert_ok "checklist: SSH not hardened step" grep -q 'SSH is NOT hardened yet' <<<"$out"
+assert_ok "checklist: names the user and the command" \
+  grep -q 'log in as newadmin and run sudo -v, run: sudo koncreet ssh apply' <<<"$out"
+out="$(KONCREET_DRY_RUN=0 ui_post_apply_checklist newadmin 0 2>&1)"
+assert_fail "checklist: no SSH step when not skipped" grep -q 'NOT hardened' <<<"$out"
+out="$(KONCREET_DRY_RUN=1 ui_post_apply_checklist newadmin 1 2>&1)"
+assert_eq "$out" "" "checklist: dry-run prints nothing"
+out="$(KONCREET_DRY_RUN=0 ui_done_summary ssh 2>&1)"
+assert_ok "done line counts the skipped module" grep -q 'Done - 1 module skipped (ssh)' <<<"$out"
+out="$(KONCREET_DRY_RUN=0 ui_done_summary 2>&1)"
+assert_ok "done line without skips" grep -qE '^Done in ' <<<"$out"
+
+echo "== generated password file freshness =="
+pw_dir="$(mktemp -d)"
+pw_file="$pw_dir/deploy.koncreet-password"
+echo 's3cret' >"$pw_file"
+touch -d '2026-01-10 12:00:00' "$pw_file"
+pw_day=$(( $(stat -c %Y "$pw_file") / 86400 ))
+pw_state() {  # pw_state SHADOW_HASH LASTCHG_DAY
+  local h="$1" day="$2"
+  ( getent() { echo "deploy:$h:$day:0:99999:7:::"; }; koncreet_passfile_state deploy "$pw_file" ) || return $?
+}
+# Hash check is exact (catches a same-day passwd), but needs a libc crypt with sha512.
+sha="$(KP=s3cret perl -e 'my $h = crypt($ENV{KP}, q($6$koncreet$)); print defined $h ? $h : ""' 2>/dev/null || true)"
+if [[ "$sha" == '$6$koncreet$'* ]]; then
+  rc=0; pw_state "$sha" "$pw_day" || rc=$?
+  assert_eq "$rc" "0" "password file matches the shadow hash: current"
+  other="$(KP=changed perl -e 'print crypt($ENV{KP}, q($6$koncreet$))')"
+  rc=0; pw_state "$other" "$pw_day" || rc=$?
+  assert_eq "$rc" "1" "password changed the same day: stale"
+else
+  echo "  SKIP: perl crypt has no sha512 here; hash checks run in CI"
+fi
+rc=0; pw_state '!' "$((pw_day + 3))" || rc=$?
+assert_eq "$rc" "3" "unverifiable hash + later shadow change: possibly stale"
+rc=0; pw_state '!' "$pw_day" || rc=$?
+assert_eq "$rc" "2" "unverifiable hash + no later change: unknown (keep prompting)"
+rm -rf "$pw_dir"
+
+echo "== login MOTD warns while SSH is not hardened =="
+# shellcheck source=/dev/null
+source "$ROOT/modules/baseline.sh"
+motd_dir="$(mktemp -d)"
+mkdir -p "$motd_dir/bin"
+printf '#!/bin/sh\nshift\nexec "$@"\n' >"$motd_dir/bin/timeout"
+printf '#!/bin/sh\nprintf "%%s\\n" "passwordauthentication yes" "permitrootlogin yes"\n' >"$motd_dir/bin/sshd"
+chmod +x "$motd_dir/bin/timeout" "$motd_dir/bin/sshd"
+(
+  KONCREET_DRY_RUN=0
+  KONCREET_MOTD="$motd_dir/99-koncreet"
+  KONCREET_SSH_DROPIN="$motd_dir/00-koncreet.conf"
+  koncreet_log_path() { echo "$motd_dir/log"; }
+  baseline_write_motd
+) >/dev/null 2>&1
+out="$(PATH="$motd_dir/bin:$PATH" sh "$motd_dir/99-koncreet")"
+assert_ok "MOTD warns with no drop-in and password login on" grep -q 'SSH password or root login is still on' <<<"$out"
+touch "$motd_dir/00-koncreet.conf"
+out="$(PATH="$motd_dir/bin:$PATH" sh "$motd_dir/99-koncreet")"
+assert_fail "MOTD is quiet once the drop-in exists" grep -q 'still on' <<<"$out"
+rm -f "$motd_dir/00-koncreet.conf" "$motd_dir/bin/sshd"
+out="$(PATH="$motd_dir/bin:$PATH" sh "$motd_dir/99-koncreet"; echo "rc=$?")"
+assert_ok "MOTD without sshd exits 0" grep -q 'rc=0' <<<"$out"
+rm -rf "$motd_dir"
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

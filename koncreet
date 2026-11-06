@@ -240,6 +240,8 @@ cmd_apply_config() {
   done
   ui_overall_init "${#run_mods[@]}"
 
+  local ssh_skipped=0
+  local -a skipped_mods=()
   for m in "${mods[@]}"; do
     m="${m// /}"
     case "$m" in
@@ -264,15 +266,17 @@ cmd_apply_config() {
           ui_overall_next "SSH hardening"
           ssh_apply
         elif cfg_bool_true "${KONCREET_CFG_SSH_HARDEN}"; then
-          ui_skip "$(ssh_skip_reason)"
+          ssh_note_skipped
+          ssh_skipped=1
+          skipped_mods+=("ssh")
         else
           ui_skip "ssh_harden=false"
         fi
         ;;
     esac
   done
-  ui_done_summary
-  ui_post_apply_checklist "${KONCREET_CFG_USER:-${KONCREET_LAST_BASELINE_USER:-}}"
+  ui_done_summary "${skipped_mods[@]+"${skipped_mods[@]}"}"
+  ui_post_apply_checklist "${KONCREET_CFG_USER:-${KONCREET_LAST_BASELINE_USER:-}}" "$ssh_skipped"
   maybe_offer_path_install
 }
 
@@ -512,11 +516,13 @@ EOF
         if [[ "$do_ssh" -eq 1 ]]; then
           ui_overall_next "SSH hardening"
           ssh_apply
+          ui_done_summary
+          ui_post_apply_checklist "${user:-${KONCREET_LAST_BASELINE_USER:-}}" 0
         else
-          ui_skip "$(ssh_skip_reason)"
+          ssh_note_skipped
+          ui_done_summary ssh
+          ui_post_apply_checklist "${user:-${KONCREET_LAST_BASELINE_USER:-}}" 1
         fi
-        ui_done_summary
-        ui_post_apply_checklist "${user:-${KONCREET_LAST_BASELINE_USER:-}}"
         maybe_offer_path_install
         ;;
       7) cmd_status ;;

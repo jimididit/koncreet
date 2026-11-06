@@ -75,6 +75,10 @@ die() {
   exit 1
 }
 
+koncreet_is_root() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]]
+}
+
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     die "Run as root: sudo $0 $*"

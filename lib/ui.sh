@@ -168,6 +168,7 @@ ui_overall_next() {
   fi
 }
 
+# Optional args: names of requested modules that were skipped (e.g. ssh).
 ui_done_summary() {
   local elapsed=0
   if [[ -n "${KONCREET_UI_STARTED_AT:-}" ]]; then
@@ -175,26 +176,44 @@ ui_done_summary() {
   fi
   local lp
   lp="$(koncreet_log_path 2>/dev/null || echo koncreet.log)"
-  local done_msg="Done"
-  [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && done_msg="Dry-run done - nothing changed"
+  local done_msg="Done" color="$UI_GREEN$UI_BOLD"
+  if [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]]; then
+    done_msg="Dry-run done - nothing changed"
+  elif [[ "$#" -gt 0 ]]; then
+    local list="$*"
+    local noun="modules"
+    [[ "$#" -eq 1 ]] && noun="module"
+    done_msg="Done - $# $noun skipped (${list// /, })"
+    color="$UI_YELLOW$UI_BOLD"
+  fi
   echo >&2
-  printf '%s\n' "$(ui_colorize "$UI_GREEN$UI_BOLD" "$done_msg")$(ui_colorize "$UI_DIM" " in ${elapsed}s · log: $lp")" >&2
+  printf '%s\n' "$(ui_colorize "$color" "$done_msg")$(ui_colorize "$UI_DIM" " in ${elapsed}s · log: $lp")" >&2
 }
 
 # After hardening: keep session open, verify new login, recovery hints
-# Optional arg: username whose password file may exist under /root/
+# Args: [username whose password file may exist under /root/] [ssh_skipped: 1 if
+# SSH hardening was requested in this run but skipped by the pre-run safety check]
 ui_post_apply_checklist() {
-  local user="${1:-}"
+  local user="${1:-}" ssh_skipped="${2:-0}"
   [[ "${KONCREET_DRY_RUN:-0}" -eq 1 ]] && return 0
+  local n=0
+  _ui_step() {
+    n=$((n + 1))
+    printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "${n}.")" "$1" >&2
+  }
   echo >&2
   printf '%s\n' "$(ui_colorize "$UI_BOLD" "Before you disconnect")" >&2
   printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2
-  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "1.")" "Open a NEW SSH session now - keep this one open until it works" >&2
-  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "2.")" "sudo koncreet status" >&2
-  printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "3.")" "If locked out: sudo koncreet ssh undo | sudo ufw disable | sudo koncreet fail2ban unban YOUR.IP" >&2
-  if [[ -n "$user" && -f "/root/${user}.koncreet-password" ]]; then
-    printf '  %s %s\n' "$(ui_colorize "$UI_CYAN" "4.")" "New user password: cat /root/${user}.koncreet-password" >&2
+  _ui_step "Open a NEW SSH session now - keep this one open until it works"
+  if [[ "$ssh_skipped" -eq 1 ]]; then
+    _ui_step "$(ui_colorize "$UI_YELLOW$UI_BOLD" "SSH is NOT hardened yet") - after you confirm you can log in as ${user:-your sudo user} and run sudo -v, run: sudo koncreet ssh apply"
   fi
+  _ui_step "sudo koncreet status"
+  _ui_step "If locked out: sudo koncreet ssh undo | sudo ufw disable | sudo koncreet fail2ban unban YOUR.IP"
+  if [[ -n "$user" && -f "/root/${user}.koncreet-password" ]]; then
+    _ui_step "New user password: cat /root/${user}.koncreet-password"
+  fi
+  unset -f _ui_step
   printf '%s\n' "$(ui_colorize "$UI_DIM" "─────────────────────")" >&2
   echo >&2
 }

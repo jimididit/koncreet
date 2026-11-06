@@ -129,6 +129,42 @@ koncreet_listenstream_port() {
   fi
 }
 
+: "${KONCREET_SSHD_CONFIG:=/etc/ssh/sshd_config}"
+
+# Print every sshd config file that can affect sshd: the main file, the stock
+# sshd_config.d/*.conf glob, and anything pulled in by Include lines (followed
+# recursively, relative paths resolved against the main file's directory).
+# Scanning the stock glob even when it is not Included can only add warnings.
+koncreet_sshd_config_files() {
+  local base cand line pat word hit
+  base="$(dirname "$KONCREET_SSHD_CONFIG")"
+  local -a queue=("$KONCREET_SSHD_CONFIG") found=() words=()
+  local -A seen=()
+  for cand in "$base"/sshd_config.d/*.conf; do
+    [[ -f "$cand" ]] && queue+=("$cand")
+  done
+  while [[ "${#queue[@]}" -gt 0 && "${#found[@]}" -lt 100 ]]; do
+    cand="${queue[0]}"
+    queue=("${queue[@]:1}")
+    [[ -f "$cand" && -z "${seen[$cand]:-}" ]] || continue
+    seen["$cand"]=1
+    found+=("$cand")
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line%%#*}"
+      [[ "$line" =~ ^[[:space:]]*[Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]=]+(.*)$ ]] || continue
+      read -ra words <<<"${BASH_REMATCH[1]}"
+      for word in "${words[@]}"; do
+        if [[ "$word" == /* ]]; then pat="$word"; else pat="$base/$word"; fi
+        while IFS= read -r hit; do
+          [[ -n "$hit" ]] && queue+=("$hit")
+        done < <(compgen -G "$pat" | sort)
+      done
+    done <"$cand"
+  done
+  [[ "${#found[@]}" -gt 0 ]] && printf '%s\n' "${found[@]}"
+  return 0
+}
+
 # Collect SSH listen ports from sshd -T, config files, and systemd socket units.
 # Prints unique port numbers, one per line. Returns 1 (no output) if none found;
 # callers that open the firewall must not invent port 22.
@@ -148,7 +184,7 @@ koncreet_ssh_listen_ports() {
 
   # Config files (fallback / additional)
   local f
-  for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+  while IFS= read -r f; do
     [[ -f "$f" ]] || continue
     while read -r line; do
       # strip comments
@@ -157,7 +193,7 @@ koncreet_ssh_listen_ports() {
         ports["${BASH_REMATCH[1]}"]=1
       fi
     done <"$f"
-  done
+  done < <(koncreet_sshd_config_files)
 
   # systemd socket ListenStream=
   for f in /lib/systemd/system/ssh.socket /usr/lib/systemd/system/ssh.socket \
