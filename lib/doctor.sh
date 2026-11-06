@@ -32,6 +32,59 @@ koncreet_os_is_supported() {
   return 1
 }
 
+# Report whether password auth, keyboard-interactive and root login are really
+# off, from "sshd -T", whether or not koncreet wrote the drop-in.
+doctor_ssh_hardening() {
+  local sshd_d dropin="" name eff bad m
+  sshd_d="$(dirname "$KONCREET_SSH_DROPIN")"
+  # Some images make /etc/ssh mode 750; non-root doctor must not silently skip.
+  if ! koncreet_is_root && ! { [[ -r "$sshd_d" && -x "$sshd_d" ]]; }; then
+    doctor_warn "cannot read $sshd_d as $(id -un) - run: sudo koncreet doctor"
+    return 0
+  fi
+  if dropin="$(koncreet_ssh_active_dropin)"; then
+    name="$(basename "$dropin")"
+    [[ "$dropin" != "$KONCREET_SSH_DROPIN" ]] && doctor_warn "legacy $name present - re-run: koncreet ssh apply"
+  else
+    dropin=""
+  fi
+  if ! koncreet_is_root; then
+    # sshd -T needs root (host keys); never fall back to sudo, it could prompt.
+    if [[ -n "$dropin" ]]; then
+      doctor_warn "SSH drop-in $name present - run: sudo koncreet doctor (to verify effective settings)"
+    else
+      doctor_warn "SSH hardening not checked as $(id -un) - run: sudo koncreet doctor"
+    fi
+    return 0
+  fi
+  if ! command -v sshd >/dev/null 2>&1; then
+    doctor_warn "sshd not found - cannot check effective SSH settings"
+    return 0
+  fi
+  if [[ -n "$dropin" ]] && ! sshd -t 2>/dev/null; then
+    doctor_fail "sshd -t failed with $name present"
+    return 0
+  fi
+  if ! eff="$(sshd -T 2>/dev/null)" || [[ -z "$eff" ]]; then
+    doctor_warn "could not read effective SSH settings (sshd -T failed)"
+    return 0
+  fi
+  bad="$(koncreet_sshd_mismatch_summary <<<"$eff")"
+  if [[ -n "$dropin" && -n "$bad" ]]; then
+    doctor_warn "SSH harden not fully in effect: $bad (see: koncreet ssh status)"
+  elif [[ -n "$dropin" ]]; then
+    doctor_ok "sshd -t ok; password auth + root login off ($name)"
+  elif [[ -n "$bad" ]]; then
+    doctor_warn "SSH hardening not applied: $bad - run: sudo koncreet ssh apply"
+  else
+    doctor_ok "password auth + root login already off (no koncreet drop-in)"
+  fi
+  while IFS= read -r m; do
+    [[ -n "$m" ]] && doctor_warn "Match override: $m"
+  done < <(ssh_match_auth_overrides)
+  return 0
+}
+
 cmd_doctor() {
   KONCREET_DOCTOR_FAILS=0
   KONCREET_DOCTOR_WARNS=0
@@ -95,46 +148,17 @@ cmd_doctor() {
     doctor_warn "SSH unit=${unit} but listen port undetected (firewall apply will refuse)"
   fi
 
-  local key_user dropin="" sshd_d="/etc/ssh/sshd_config.d"
+  local key_user
   if key_user="$(koncreet_find_nonroot_key_user sudo 2>/dev/null)"; then
-    doctor_ok "SSH harden ready: '$key_user' has keys and sudo"
+    doctor_ok "ready for ssh apply: '$key_user' has keys and sudo"
   elif key_user="$(koncreet_find_nonroot_key_user 2>/dev/null)"; then
     doctor_warn "'$key_user' has SSH keys but no sudo - ssh apply will refuse until: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $key_user"
   else
     doctor_warn "no non-root user with authorized_keys - run baseline before ssh apply"
   fi
 
-  # Some images make /etc/ssh mode 750; non-root doctor must not silently skip.
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]] && ! { [[ -r "$sshd_d" && -x "$sshd_d" ]]; }; then
-    doctor_warn "cannot read $sshd_d as $(id -un) - run: sudo koncreet doctor"
-  else
-    if [[ -f "$sshd_d/00-koncreet.conf" ]]; then
-      dropin="$sshd_d/00-koncreet.conf"
-    elif [[ -f "$sshd_d/99-koncreet.conf" ]]; then
-      dropin="$sshd_d/99-koncreet.conf"
-      doctor_warn "legacy 99-koncreet.conf present - re-run: koncreet ssh apply"
-    elif [[ -f "$sshd_d/99-harden.conf" ]]; then
-      dropin="$sshd_d/99-harden.conf"
-      doctor_warn "legacy 99-harden.conf present - re-run: koncreet ssh apply"
-    fi
-    if [[ -n "$dropin" ]]; then
-      if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        doctor_warn "SSH drop-in $(basename "$dropin") present - run: sudo koncreet doctor (to verify effective settings)"
-      elif command -v sshd >/dev/null 2>&1; then
-        if ! sshd -t 2>/dev/null; then
-          doctor_fail "sshd -t failed with $(basename "$dropin") present"
-        else
-          local -a bad=()
-          mapfile -t bad < <(sshd -T 2>/dev/null | koncreet_sshd_mismatches)
-          if [[ "${#bad[@]}" -gt 0 ]]; then
-            doctor_warn "SSH harden not fully in effect: ${bad[*]} (see: koncreet ssh status)"
-          else
-            doctor_ok "sshd -t ok; password auth + root login off ($(basename "$dropin"))"
-          fi
-        fi
-      fi
-    fi
-  fi
+  doctor_ssh_hardening
+
 
   # Older runs could leave koncreet /etc drop-ins root-only; point at a one-shot fix.
   local -a private_files=() private_dirs=()

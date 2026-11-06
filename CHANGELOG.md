@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- doctor: always checks the effective SSH settings with `sshd -T` when run as root, not only when a koncreet drop-in exists; with no drop-in and password/root login still on it warns with the live values and points to `sudo koncreet ssh apply` (so it no longer ends with "all clear"), and with no drop-in but everything already off it says so; Match blocks that re-enable password/root login are reported too
+- doctor: the admin-user line now reads "ready for ssh apply" instead of "SSH harden ready", which looked like SSH was already hardened; as non-root it says SSH was not checked and points to `sudo koncreet doctor` (never calls sudo)
+- ssh status: reports the same facts as doctor (not applied with the effective values, or already off without a koncreet drop-in, plus Match overrides)
+- apply / menu "Run everything": when SSH hardening was requested but skipped by the pre-run safety check, the skip is now written to `/var/log/koncreet.log`, the final line says "Done - 1 module skipped (ssh)", and "Before you disconnect" lists "SSH is NOT hardened yet" with the `sudo koncreet ssh apply` step. When SSH hardening runs is unchanged
+- baseline: the login MOTD warns while there is no koncreet SSH drop-in and `sshd -T` shows password/root login on (exits at once when the drop-in exists, caps `sshd -T` at 2 seconds, stays silent on errors); existing installs pick this up on the next `baseline apply`
+- ssh: before root login is disabled, the generated sudo password is checked against `/etc/shadow` (exact hash check, so a same-day `passwd` is caught); if the user already changed it, the stale `/root/USER.koncreet-password` is removed instead of being shown as current. If the hash cannot be verified, a later password change date in `/etc/shadow` adds a "may be out of date" note and the prompt stays
+- ssh: the Match and conflicting-line scans now follow `Include` lines in `sshd_config` (recursively), understand `Keyword=value`, and treat the old `ChallengeResponseAuthentication` name as keyboard-interactive; the port scan uses the same file list
+
 ## 0.2.4
 
 - ssh: after apply, also fail closed when a `Match` block re-enables password/root/kbd-interactive auth (global `sshd -T` misses those); probe effective settings with `sshd -T -C` for root and the admin user

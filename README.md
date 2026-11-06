@@ -61,7 +61,7 @@ sudo koncreet --dry-run apply -c ./koncreet.conf
 sudo koncreet apply -c ./koncreet.conf --yes
 ```
 
-SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`.
+SSH hardening only runs if a non-root sudo user with SSH keys exists *before* the run. On a fresh server where `baseline` creates that user, the plan says SKIP: log in as the new user, check `sudo -v`, then run `sudo koncreet ssh apply`. Until you do, the run ends with `Done - 1 module skipped (ssh)`, the skip is in the log, and `sudo koncreet doctor` warns that password/root login are still on.
 
 Flags: `-n` dry-run, `-y` assume yes, `-c` config, `-v` verbose, `-V` version.
 
