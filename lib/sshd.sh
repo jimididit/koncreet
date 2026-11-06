@@ -28,13 +28,33 @@ koncreet_user_has_key() {
   koncreet_has_working_key_file "$keys"
 }
 
-# Return 0 if the user can run sudo: member of the sudo/admin group, or granted by sudoers.
-koncreet_user_can_sudo() {
+# Return 0 if sudo would let the user in: member of the sudo/admin group, or granted by sudoers.
+koncreet_user_has_sudo_rights() {
   local u="$1" g
   for g in $(id -nG "$u" 2>/dev/null); do
     [[ "$g" == "${KONCREET_SUDO_GROUP:-sudo}" || "$g" == "admin" ]] && return 0
   done
   command -v sudo &>/dev/null && sudo -n -l -U "$u" 2>/dev/null | grep -q 'may run the following'
+}
+
+# Return 0 if the user can actually run sudo: has the rights, and a password to
+# type (or a NOPASSWD rule).
+koncreet_user_can_sudo() {
+  koncreet_user_has_sudo_rights "$1" && ! koncreet_sudo_password_unusable "$1"
+}
+
+# True only when it is certain sudo cannot work for the user: the password in
+# /etc/shadow is locked, disabled or empty, and no sudoers rule says NOPASSWD.
+# Without root the shadow entry is unreadable, so this stays false (unknown).
+koncreet_sudo_password_unusable() {
+  local u="$1" entry hash
+  declare -F koncreet_is_root >/dev/null && koncreet_is_root || return 1
+  entry="$(getent shadow "$u" 2>/dev/null)" || return 1
+  [[ -n "$entry" ]] || return 1
+  hash="$(cut -d: -f2 <<<"$entry")"
+  [[ "$hash" == \$* ]] && return 1
+  command -v sudo &>/dev/null && sudo -n -l -U "$u" 2>/dev/null | grep -q 'NOPASSWD' && return 1
+  return 0
 }
 
 # Find a non-root user with a working SSH key. Prefer SUDO_USER, then scan /home.
@@ -71,6 +91,11 @@ koncreet_ssh_harden_gate() {
     return 0
   fi
   if user="$(koncreet_find_nonroot_key_user)"; then
+    if koncreet_user_has_sudo_rights "$user" && koncreet_sudo_password_unusable "$user"; then
+      log_error "NOT SAFE: '$user' has SSH keys and sudo rights, but its password is locked or unset, so sudo cannot work - you would lose root access."
+      log_error "Set one first: passwd $user"
+      return 1
+    fi
     log_error "NOT SAFE: '$user' has SSH keys but cannot use sudo - you would lose root access."
     log_error "Grant sudo first: koncreet baseline apply --user $user  (or: usermod -aG ${KONCREET_SUDO_GROUP:-sudo} $user)"
     return 1

@@ -302,6 +302,79 @@ assert_ok "sudo group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo '
 assert_ok "admin group member" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'ubuntu adm admin'; }; koncreet_user_can_sudo ubuntu"
 assert_ok "sudoers grant" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'ops ops'; }; sudo() { echo 'User ops may run the following commands on h:'; }; koncreet_user_can_sudo ops"
 assert_fail "no sudo" bash -c "source '$ROOT/lib/sshd.sh'; id() { echo 'git git'; }; sudo() { echo 'User git is not allowed to run sudo on h.'; }; koncreet_user_can_sudo git"
+# As root the shadow entry is readable: sudo group membership with a locked or
+# unset password and no NOPASSWD rule cannot actually sudo.
+sudo_case() {  # sudo_case SHADOW_HASH SUDO_L_OUTPUT
+  bash -c "source '$ROOT/lib/sshd.sh'; koncreet_is_root() { return 0; }; id() { echo 'deploy sudo'; }
+    getent() { echo 'deploy:$1:20000:0:99999:7:::'; }; sudo() { printf '%s\n' '$2'; }
+    koncreet_user_can_sudo deploy"
+}
+assert_fail "sudo group + locked password + no NOPASSWD cannot sudo" sudo_case '!' '(ALL : ALL) ALL'
+assert_fail "sudo group + unset password cannot sudo" sudo_case '' '(ALL : ALL) ALL'
+assert_ok "sudo group + locked password + NOPASSWD can sudo" sudo_case '!' '(ALL) NOPASSWD: ALL'
+assert_ok "sudo group + real password hash can sudo" sudo_case '$y$j9T$salt$hash' '(ALL : ALL) ALL'
+out="$(bash -c "source '$ROOT/lib/common.sh'; source '$ROOT/lib/sshd.sh'; koncreet_is_root() { return 0; }
+  koncreet_user_has_key() { return 0; }; id() { [[ \"\$1\" == -u ]] && return 0; echo 'deploy sudo'; }
+  getent() { echo 'deploy:!:20000:0:99999:7:::'; }; sudo() { echo '(ALL : ALL) ALL'; }
+  SUDO_USER=deploy koncreet_ssh_harden_gate" 2>&1)" || true
+assert_ok "gate names a locked password" grep -q "'deploy' has SSH keys and sudo rights, but its password is locked or unset" <<<"$out"
+assert_ok "gate gives the fix" grep -q "Set one first: passwd deploy" <<<"$out"
+out="$(bash -c "source '$ROOT/lib/common.sh'; source '$ROOT/lib/sshd.sh'; koncreet_is_root() { return 0; }
+  koncreet_user_has_key() { return 0; }; id() { [[ \"\$1\" == -u ]] && return 0; echo 'deploy deploy'; }
+  getent() { echo 'deploy:!:20000:0:99999:7:::'; }; sudo() { echo 'User deploy is not allowed to run sudo on h.'; }
+  SUDO_USER=deploy koncreet_ssh_harden_gate" 2>&1)" || true
+assert_ok "no sudo rights + locked password is reported as no sudo" grep -q "'deploy' has SSH keys but cannot use sudo" <<<"$out"
+assert_fail "no sudo rights is not blamed on the password" grep -q 'locked or unset' <<<"$out"
+
+echo "== ssh apply needs sudo proof while the generated password is current =="
+proof_dir="$(mktemp -d)"
+KONCREET_PASSFILE_DIR="$proof_dir"
+echo 'TopSecretGenerated1' >"$proof_dir/deploy.koncreet-password"
+proof() {  # proof STATE [SUDO_USER] - runs ssh_sudo_unproven deploy, prints reason, rc 0 = unproven
+  local st="$1" su="${2:-}"
+  ( koncreet_passfile_state() { return "$st"; }; SUDO_USER="$su" ssh_sudo_unproven deploy )
+}
+rc=0; out="$(proof 0)" || rc=$?
+assert_eq "$rc" "0" "root run + generated password current: not proven"
+assert_ok "reason says to run through sudo as the user" grep -q 'Log in as deploy, check sudo -v, then run: sudo koncreet ssh apply' <<<"$out"
+assert_fail "reason never contains the password" grep -q 'TopSecretGenerated1' <<<"$out"
+rc=0; proof 0 deploy >/dev/null || rc=$?
+assert_eq "$rc" "1" "run through sudo as the user: proven"
+rc=0; proof 0 someoneelse >/dev/null || rc=$?
+assert_eq "$rc" "0" "sudo as a different user does not prove it"
+rc=0; proof 2 >/dev/null || rc=$?
+assert_eq "$rc" "0" "cannot verify the password: still needs proof"
+rc=0; proof 1 >/dev/null || rc=$?
+assert_eq "$rc" "1" "user already set their own password: nothing to prove"
+rm -f "$proof_dir/deploy.koncreet-password"
+rc=0; proof 0 >/dev/null || rc=$?
+assert_eq "$rc" "1" "no generated password file: nothing to prove"
+
+echo 'TopSecretGenerated1' >"$proof_dir/deploy.koncreet-password"
+rc=0
+out="$( (
+  koncreet_ssh_harden_gate() { echo deploy; }
+  koncreet_passfile_state() { return 0; }
+  KONCREET_DRY_RUN=0 KONCREET_YES=1
+  KONCREET_SSH_DROPIN="$proof_dir/00-koncreet.conf"
+  ssh_apply
+) 2>&1)" || rc=$?
+assert_fail "ssh apply as root refuses (even with --yes)" test "$rc" -eq 0
+assert_ok "refusal explains the next step" grep -q 'Refusing to disable root login:.*sudo koncreet ssh apply' <<<"$out"
+assert_fail "refusal never prints the password" grep -q 'TopSecretGenerated1' <<<"$out"
+assert_ok "nothing written on refusal" test ! -e "$proof_dir/00-koncreet.conf"
+( koncreet_ssh_harden_gate() { echo deploy; }; koncreet_passfile_state() { return 0; }
+  ssh_check ) >/dev/null 2>&1 && rc=0 || rc=$?
+assert_eq "$rc" "1" "ssh_check says not yet, so apply -c plans a SKIP"
+out="$( koncreet_ssh_harden_gate() { echo deploy; }; koncreet_passfile_state() { return 0; }
+  ssh_check >/dev/null 2>&1; ssh_skip_reason )"
+assert_ok "skip reason carries the sudo instruction" grep -q '^SSH harden - .*sudo koncreet ssh apply' <<<"$out"
+( SUDO_USER=other; ssh_forget_generated_password deploy ) >/dev/null 2>&1
+assert_ok "password file kept unless sudo as the user" test -f "$proof_dir/deploy.koncreet-password"
+( SUDO_USER=deploy; ssh_forget_generated_password deploy ) >/dev/null 2>&1
+assert_ok "password file removed after sudo as the user" test ! -e "$proof_dir/deploy.koncreet-password"
+unset KONCREET_PASSFILE_DIR
+rm -rf "$proof_dir"
 
 echo "== client IP detection =="
 assert_ok "valid ipv4" koncreet_valid_ip 203.0.113.5
